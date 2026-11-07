@@ -1,0 +1,4 @@
+-keep public class com.monolito.correlula.MainActivity { public <init>(); }
+-allowaccessmodification
+-repackageclasses ''
+-dontwarn **
