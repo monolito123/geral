@@ -1,0 +1,148 @@
+#!/bin/sh
+# Stage 2 of the minimal Linux test target. It runs from the verified system
+# image, mounts storage and then runs the test named on the kernel command
+# line (nott.test=NAME), or starts a shell when none is named.
+#
+# Marker used by the tamper test: NOTT-MINI-STAGE2-MARKER
+#
+# Test scaffolding, not NottOS product code. See README.md.
+
+export PATH=/sbin:/bin
+# This busybox shell runs its own applets before looking at PATH, and it has
+# a much smaller mke2fs. Programs that are not applets, or must not be, are
+# called by absolute path.
+MKE2FS=/sbin/mke2fs
+E4CRYPT=/sbin/e4crypt
+DMSETUP=/sbin/dmsetup
+mount -t tmpfs tmpfs /tmp
+
+say() {
+    echo "NOTT-MINI: $*"
+}
+
+halt() {
+    say "$*"
+    say "HALT"
+    sync
+    umount /data /scratch 2>/dev/null
+    poweroff -f
+}
+
+# param NAME: value of nott.NAME=VALUE on the kernel command line.
+param() {
+    tr ' ' '\n' </proc/cmdline | sed -n "s/^nott\.$1=//p"
+}
+
+TEST=$(param test)
+PASS=$(param pass)
+CONTENT=$(param content)
+NAME=$(param name)
+DEVICE=$(param device)
+PLAIN=$(param plain)
+# Salt for the passphrase-to-key derivation in e4crypt.
+SALT=0x6e6f74746d696e69
+
+[ "$(cat /etc/nott-release)" = "nott-mini 1" ] ||
+    halt "FAIL stage2: release marker"
+
+# Format the encrypted mapping on first use, then mount it.
+if ! mount -t ext4 -o nosuid,nodev /dev/mapper/data /data 2>/dev/null; then
+    "$MKE2FS" -q -t ext4 -O encrypt /dev/mapper/data ||
+        halt "FAIL stage2: format data"
+    mount -t ext4 -o nosuid,nodev /dev/mapper/data /data ||
+        halt "FAIL stage2: mount data"
+fi
+mount -t ext4 -o nosuid,nodev,noexec /dev/vdd /scratch ||
+    halt "FAIL stage2: mount scratch"
+
+# Adds the key derived from $1 to the keyring; with a directory as $2 it
+# also sets the encryption policy on that (empty) directory.
+add_key() {
+    passphrase=$1
+    shift
+    printf '%s\n' "$passphrase" | "$E4CRYPT" add_key -S "$SALT" "$@" >/dev/null 2>&1
+}
+
+storage_report() {
+    say "BEGIN storage-report"
+    echo "[mounts]"
+    cat /proc/mounts
+    echo "[verity]"
+    "$DMSETUP" ls --target verity | sed -n 's|^\([^[:space:]]\{1,\}\)[[:space:]].*|/dev/mapper/\1|p'
+    echo "[encrypted]"
+    "$DMSETUP" ls --target crypt | sed -n 's|^\([^[:space:]]\{1,\}\)[[:space:]].*|/dev/mapper/\1|p'
+    say "END storage-report"
+}
+
+case "$TEST" in
+"")
+    say "shell ready"
+    exec sh
+    ;;
+boot)
+    storage_report
+    if cat /etc/nott/noncritical.txt >/tmp/noncritical 2>/dev/null; then
+        say "noncritical: read ok sha256=$(sha256sum </tmp/noncritical | cut -d' ' -f1)"
+    else
+        say "noncritical: read error"
+    fi
+    say "shell ready"
+    ;;
+provision)
+    mkdir /data/secure || halt "FAIL provision: mkdir"
+    add_key "$PASS" /data/secure || halt "FAIL provision: set policy"
+    # About 4 KiB of the canary, so that it cannot hide in a partial block.
+    yes "$CONTENT" | head -n 100 >"/data/secure/$NAME" ||
+        halt "FAIL provision: write secret"
+    yes "$DEVICE" | head -n 100 >/data/device.txt ||
+        halt "FAIL provision: write device file"
+    yes "$PLAIN" | head -n 100 >/scratch/plain.txt ||
+        halt "FAIL provision: write control"
+    say "provision: done"
+    ;;
+locked)
+    # No key is added. Names must be unreadable and contents inaccessible.
+    if [ -e "/data/secure/$NAME" ]; then
+        say "locked: FAIL name visible"
+    else
+        say "locked: name hidden"
+    fi
+    entries=0
+    readable=0
+    for file in /data/secure/*; do
+        [ -e "$file" ] || continue
+        entries=$((entries + 1))
+        say "locked: entry ${file##*/}"
+        if cat "$file" >/dev/null 2>&1; then readable=1; fi
+    done
+    say "locked: entries=$entries"
+    if [ "$readable" -eq 0 ]; then
+        say "locked: read denied"
+    else
+        say "locked: FAIL secret readable"
+    fi
+    if grep -q -F "$DEVICE" /data/device.txt; then
+        say "locked: device file readable"
+    fi
+    ;;
+unlock)
+    add_key "$PASS" || halt "FAIL unlock: add key"
+    if [ "$(head -n 1 "/data/secure/$NAME" 2>/dev/null)" = "$CONTENT" ]; then
+        say "unlock: content ok"
+    else
+        say "unlock: FAIL content"
+    fi
+    ;;
+wrongpass)
+    add_key "$PASS" || halt "FAIL wrongpass: add key"
+    if cat "/data/secure/$NAME" >/dev/null 2>&1; then
+        say "wrongpass: FAIL secret readable"
+    else
+        say "wrongpass: read denied"
+    fi
+    ;;
+*)
+    halt "FAIL stage2: unknown test '$TEST'"
+    ;;
+esac
+halt "DONE"

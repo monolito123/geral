@@ -1,0 +1,6 @@
+# Mount points that are allowed to be neither verified, volatile nor
+# encrypted on the minimal Linux test target (threat model, INV-02).
+#
+# /scratch exists only for the tests: it holds the plaintext control canary
+# that shows the raw-image scan can find unencrypted data.
+/scratch

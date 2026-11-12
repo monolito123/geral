@@ -11,10 +11,13 @@ usage() {
 usage: nott <command>
 
   build host   build the host tools into out/host/
+  build mini   build the minimal Linux test target into out/mini/
   check        formatting, lints (warnings are errors), tests, shell lint
   repro        build the host tools twice in different directories and
                compare the results bit for bit
   sbom         write the SPDX bill of materials for the host tools
+  mini test    build the minimal Linux test target and run its boot tests
+  mini shell   boot the minimal Linux test target to an interactive shell
 
 OS image targets (Cuttlefish, phones) are not implemented: they need an AOSP
 build host. See docs/roadmap.md, "Prerequisites that are not yet met".
@@ -68,7 +71,8 @@ cmd_check() {
     cargo fmt --all -- --check
     cargo clippy --workspace --all-targets --locked -- -D warnings
     cargo test --workspace --locked
-    shellcheck nott
+    shellcheck nott tests/mini/*.sh
+    shellcheck --shell=sh tests/mini/init-stage1 tests/mini/init-stage2
     echo "nott: check passed"
 }
 
@@ -120,9 +124,23 @@ cmd_sbom() {
 
 case "${1:-} ${2:-}" in
 "build host") cmd_build_host ;;
+"build mini")
+    cmd_build_host
+    "$ROOT/tests/mini/build.sh" "$OUT/mini"
+    ;;
 "check ") cmd_check ;;
 "repro ") cmd_repro ;;
 "sbom ") cmd_sbom ;;
+"mini test")
+    cmd_build_host
+    "$ROOT/tests/mini/build.sh" "$OUT/mini"
+    "$ROOT/tests/mini/run-tests.sh" "$OUT/mini" "$OUT/host/nott-tools"
+    ;;
+"mini shell")
+    cmd_build_host
+    "$ROOT/tests/mini/build.sh" "$OUT/mini"
+    "$ROOT/tests/mini/run-tests.sh" "$OUT/mini" "$OUT/host/nott-tools" shell
+    ;;
 " " | "help " | "--help ") usage ;;
 "build "*)
     usage >&2

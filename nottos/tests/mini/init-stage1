@@ -1,0 +1,48 @@
+#!/bin/busybox sh
+# Stage 1 of the minimal Linux test target. It runs from the initramfs, which
+# stands in for a bootloader-verified boot image: it carries the dm-verity
+# root hash of the system image and refuses to continue if the system image
+# does not match it.
+#
+# Test scaffolding, not NottOS product code. See README.md.
+
+/bin/busybox mount -t devtmpfs devtmpfs /dev
+exec </dev/console >/dev/console 2>&1
+export PATH=/sbin:/bin
+# No udev here: let libdevmapper create device nodes itself.
+export DM_DISABLE_UDEV=1
+
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t tmpfs tmpfs /run
+
+say() {
+    echo "NOTT-MINI: $*"
+}
+
+halt() {
+    say "$*"
+    say "HALT"
+    poweroff -f
+}
+
+while read -r module; do
+    insmod "/modules/$module" || halt "FAIL stage1: insmod $module"
+done </modules/order
+
+# System image: read-only, every block checked against the root hash.
+/sbin/veritysetup open /dev/vda system /dev/vdb "$(cat /etc/nott/roothash)" ||
+    halt "FAIL stage1: verity open"
+mount -t erofs -o ro /dev/mapper/system /system ||
+    halt "FAIL stage1: mount system"
+
+# Data partition: encrypted as a whole, the way metadata encryption wraps
+# user data on a phone. The key is a test key (see build.sh).
+/sbin/cryptsetup open --type plain --cipher aes-xts-plain64 --key-size 512 \
+    --key-file /etc/nott/metadata.key /dev/vdc data ||
+    halt "FAIL stage1: data open"
+
+for dir in dev proc sys run; do
+    mount -o move "/$dir" "/system/$dir" || halt "FAIL stage1: move /$dir"
+done
+exec switch_root /system /sbin/init
