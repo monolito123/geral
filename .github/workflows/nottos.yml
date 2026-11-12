@@ -1,0 +1,70 @@
+# Continuous integration for nottos/ (stage A of docs/performance-budgets.md,
+# host side). Third-party actions are pinned by commit hash.
+name: nottos
+
+on:
+  push:
+    paths:
+      - "nottos/**"
+      - ".github/workflows/nottos.yml"
+  pull_request:
+    paths:
+      - "nottos/**"
+      - ".github/workflows/nottos.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nottos-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: nottos
+
+jobs:
+  host:
+    name: Host tools
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install the pinned Rust toolchain
+        run: |
+          channel=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)
+          rustup toolchain install "$channel" --profile minimal --component rustfmt,clippy
+          cargo --version
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck
+      - name: Format, lint and test
+        run: ./nott check
+      - name: Build
+        run: ./nott build host
+      - name: Reproducibility
+        run: ./nott repro
+      - name: Bill of materials
+        run: ./nott sbom
+
+  mini:
+    name: Minimal Linux test target
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install the pinned Rust toolchain
+        run: |
+          channel=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)
+          rustup toolchain install "$channel" --profile minimal
+          cargo --version
+      - name: Install emulator and image tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            qemu-system-x86 erofs-utils cryptsetup-bin dmsetup kmod cpio zstd \
+            busybox-static e2fsprogs openssl
+      - name: Boot tests
+        run: ./nott mini test
+      - name: Serial logs
+        if: failure()
+        run: tail -n 80 out/mini/run/*.log.txt

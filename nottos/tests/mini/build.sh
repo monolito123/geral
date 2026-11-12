@@ -143,12 +143,18 @@ install_programs "$BOOT" veritysetup cryptsetup
 cp "$HERE/init-stage1" "$BOOT/init"
 chmod 755 "$BOOT/init"
 
-wanted=$(grep -E '/(dm-verity|dm-crypt|erofs)\.ko(\.zst)?:' "$MODULES/modules.dep" |
-    cut -d: -f1)
-[ "$(echo "$wanted" | wc -l)" -eq 3 ] || {
-    echo "mini: kernel $KERNEL lacks a dm-verity, dm-crypt or erofs module" >&2
-    exit 1
-}
+# Everything stage 1 needs from the kernel. Each item is either built in
+# or a module to load; which one differs between kernel packages.
+wanted=
+for name in virtio_pci virtio_blk dm-mod dm-verity dm-crypt erofs ext4 xts; do
+    module=$(sed -n "s|^\\(.*/$name\\.ko[^:]*\\):.*|\\1|p" "$MODULES/modules.dep")
+    if [ -n "$module" ]; then
+        wanted="$wanted $module"
+    elif ! grep -q "/$name\\.ko\$" "$MODULES/modules.builtin"; then
+        echo "mini: kernel $KERNEL has no $name, built in or as a module" >&2
+        exit 1
+    fi
+done
 # shellcheck disable=SC2086
 module_order "$MODULES/modules.dep" $wanted | awk '!seen[$0]++' |
     while read -r module; do
