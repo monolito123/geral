@@ -1,0 +1,32 @@
+[workspace]
+resolver = "2"
+members = ["core/format", "core/policy", "tools/nott-tools"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.97"
+license = "Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+nott-format = { path = "core/format" }
+nott-policy = { path = "core/policy" }
+serde = { version = "1.0.200", features = ["derive"] }
+serde_json = "1.0.120"
+sha2 = "0.10.8"
+toml = "0.8.19"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+# Settings that keep release artifacts identical across build directories
+# (docs/adr/0006-build-reproducibility.md).
+[profile.release]
+debug = false
+strip = "symbols"
+codegen-units = 1

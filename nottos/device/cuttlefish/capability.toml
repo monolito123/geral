@@ -1,0 +1,45 @@
+# Capability descriptor for the Cuttlefish virtual device.
+#
+# Cuttlefish is an emulator. It has no hardware root of trust, so nothing in
+# this file can become a hardware guarantee, and `nott-tools tier check`
+# reports it as a development target.
+#
+# Every answer is "unknown" on purpose: no NottOS build has run on
+# Cuttlefish yet (that needs an AOSP build host, see docs/roadmap.md), so
+# nothing has been observed. Fill this in from the on-device probe, not from
+# documentation.
+
+schema = 1
+name = "cuttlefish"
+kind = "emulator"
+arch = "x86_64"
+
+[boot]
+relock_with_custom_key = "unknown"
+rollback_protection = "unknown"
+fingerprint_on_boot_screen = "unknown"
+verified_boot_bypass_known = "unknown"
+
+[keystore]
+tee = "unknown"
+secure_element = "unknown"
+strongbox = "unknown"
+weaver = "unknown"
+
+[isolation]
+radio_iommu = "unknown"
+
+[firmware]
+security_updates = "unknown"
+
+[memory]
+mte = "unknown"
+
+[usb]
+controller_data_disable = "unknown"
+
+[kernel]
+hardening_profile = "unknown"
+
+[telephony]
+emergency_call = "untested"

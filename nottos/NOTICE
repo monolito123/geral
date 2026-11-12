@@ -1,0 +1,7 @@
+NottOS
+Copyright 2026 The NottOS Authors
+
+Licensed under the Apache License, Version 2.0 (see LICENSE), except where a
+file or directory states otherwise. Kernel patches are licensed under
+GPL-2.0-only. Documentation under docs/ is licensed under CC BY 4.0.
+See docs/adr/0005-licensing.md.

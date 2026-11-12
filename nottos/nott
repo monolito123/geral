@@ -1,0 +1,135 @@
+#!/bin/sh
+# NottOS build entry point: one command for every build and check.
+# See docs/repository-layout.md and docs/adr/0006-build-reproducibility.md.
+set -eu
+
+ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+OUT="$ROOT/out"
+
+usage() {
+    cat <<'EOF'
+usage: nott <command>
+
+  build host   build the host tools into out/host/
+  check        formatting, lints (warnings are errors), tests, shell lint
+  repro        build the host tools twice in different directories and
+               compare the results bit for bit
+  sbom         write the SPDX bill of materials for the host tools
+
+OS image targets (Cuttlefish, phones) are not implemented: they need an AOSP
+build host. See docs/roadmap.md, "Prerequisites that are not yet met".
+EOF
+}
+
+die() {
+    echo "nott: $*" >&2
+    exit 2
+}
+
+# Timestamp for anything a build embeds: the last commit that touched this
+# tree, unless the caller already set SOURCE_DATE_EPOCH.
+source_date_epoch() {
+    if [ -z "${SOURCE_DATE_EPOCH:-}" ]; then
+        SOURCE_DATE_EPOCH=$(git -C "$ROOT" log -1 --format=%ct -- . 2>/dev/null) || true
+    fi
+    [ -n "${SOURCE_DATE_EPOCH:-}" ] ||
+        die "not a git checkout: set SOURCE_DATE_EPOCH"
+    export SOURCE_DATE_EPOCH
+}
+
+# host_build SOURCE_DIR TARGET_DIR
+#
+# The only network access is `cargo fetch`, which downloads exactly the
+# crates named in Cargo.lock and verifies their checksums. The build itself
+# runs offline. Absolute paths are remapped so that the output depends
+# neither on where the source tree is nor on where Cargo keeps its files.
+host_build() {
+    (
+        cd "$1"
+        cargo_home=${CARGO_HOME:-$HOME/.cargo}
+        cargo fetch --locked
+        RUSTFLAGS="--remap-path-prefix=$1=/nottos --remap-path-prefix=$cargo_home=/cargo" \
+            CARGO_TARGET_DIR="$2" \
+            cargo build --release --locked --offline --workspace
+    )
+}
+
+cmd_build_host() {
+    source_date_epoch
+    host_build "$ROOT" "$ROOT/target"
+    mkdir -p "$OUT/host"
+    cp "$ROOT/target/release/nott-tools" "$OUT/host/nott-tools"
+    echo "nott: built $OUT/host/nott-tools"
+}
+
+cmd_check() {
+    command -v shellcheck >/dev/null || die "shellcheck is required for 'nott check'"
+    cd "$ROOT"
+    cargo fmt --all -- --check
+    cargo clippy --workspace --all-targets --locked -- -D warnings
+    cargo test --workspace --locked
+    shellcheck nott
+    echo "nott: check passed"
+}
+
+# Copies the source tree, without build outputs, into directory $1.
+export_source() {
+    mkdir -p "$1"
+    if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        (cd "$ROOT" && git ls-files -co --exclude-standard -z -- . |
+            tar --null -T - -cf -) | tar -xf - -C "$1"
+    else
+        (cd "$ROOT" && tar --exclude=./target --exclude=./out -cf - .) |
+            tar -xf - -C "$1"
+    fi
+}
+
+cmd_repro() {
+    source_date_epoch
+    work=$(mktemp -d)
+    trap 'rm -rf "$work"' EXIT
+    # Two copies at different paths and depths. The second also uses its
+    # own Cargo home, so dependency sources sit at a different path too.
+    first="$work/first/tree"
+    second="$work/second/deeper/other-name"
+    for copy in "$first" "$second"; do
+        export_source "$copy/src"
+        if [ "$copy" = "$second" ]; then
+            CARGO_HOME="$copy/cargo-home" host_build "$copy/src" "$copy/target"
+        else
+            host_build "$copy/src" "$copy/target"
+        fi
+        mkdir -p "$copy/artifacts"
+        cp "$copy/target/release/nott-tools" "$copy/artifacts/"
+    done
+    "$first/artifacts/nott-tools" repro compare "$first/artifacts" "$second/artifacts"
+}
+
+cmd_sbom() {
+    cmd_build_host
+    created=$(date -u -d "@$SOURCE_DATE_EPOCH" +%Y-%m-%dT%H:%M:%SZ)
+    (cd "$ROOT" && cargo metadata --format-version 1 --locked --offline) \
+        >"$OUT/host/cargo-metadata.json"
+    "$OUT/host/nott-tools" sbom \
+        --metadata "$OUT/host/cargo-metadata.json" \
+        --lock "$ROOT/Cargo.lock" \
+        --created "$created" \
+        --name nottos-host-tools \
+        --out "$OUT/host/nottos-host-tools.spdx.json"
+}
+
+case "${1:-} ${2:-}" in
+"build host") cmd_build_host ;;
+"check ") cmd_check ;;
+"repro ") cmd_repro ;;
+"sbom ") cmd_sbom ;;
+" " | "help " | "--help ") usage ;;
+"build "*)
+    usage >&2
+    die "unknown build target '${2:-}'"
+    ;;
+*)
+    usage >&2
+    die "unknown command"
+    ;;
+esac

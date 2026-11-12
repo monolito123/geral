@@ -1,0 +1,6 @@
+# Pinned toolchain for NottOS host tools. Change only with a reviewed commit
+# (docs/adr/0006-build-reproducibility.md).
+[toolchain]
+channel = "1.97.0"
+profile = "minimal"
+components = ["rustfmt", "clippy"]
