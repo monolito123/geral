@@ -1,347 +1,510 @@
-# Requirements review — conflicts, limits and owner decisions
+# Requirements review — questions, conflicts and limits
 
-- **Version:** 0.1 (Phase 0 draft)
+- **Version:** 0.2 (Phase 0, awaiting owner approval)
 - **Date:** 2026-11-12
+- **Change from 0.1:** the complete brief (sections 9 to 15) was received.
+  Tiers now follow section 13. Items C-18 to C-24 were added from sections
+  11 to 14. Open decisions are consolidated into seven questions.
 
-The project brief asks that no requirement be dropped silently or pretended
-into existence. This document lists every requirement found to be impossible
-as written, unsafe, or in conflict with another, with the closest achievable
-design. Items marked **Decision needed** change the architecture and wait for
-the owner. For the rest, the stated assumption is used unless the owner
-objects.
+The brief asks that no requirement be dropped silently or pretended into
+existence. Part 1 holds the questions whose answers change the architecture.
+Part 2 lists every requirement found to be impossible as written, unsafe, or
+in conflict with another, with the closest achievable design. Where no
+question is asked, the stated assumption is used unless the owner objects.
 
 Evidence tags are explained in the [README](../README.md).
 
-## Summary
+## Part 1 — Seven questions for the owner
 
-| ID | Topic | Kind | Owner decision |
+Each has a recommendation, which is also the default if there is no answer.
+
+### Q1 — Should the main profile's keys be evicted at every lock?
+
+**Why it matters.** It decides the storage key hierarchy (C-05).
+
+- **Option A, graded (recommended).** At lock, evict: keystore keys marked
+  unlocked-only; profiles and the private space set to end at lock; a new
+  opt-in storage class for apps that ask for it. The main profile's storage
+  key stays until auto-reboot. Apps keep working while locked.
+- **Option B, strict.** Evict the main profile's key at every lock. Stronger
+  against an attacker with a locked device, but alarms, incoming messages,
+  music and background sync stop, and many apps misbehave, because Android
+  apps assume their files stay readable after the first unlock.
+
+### Q2 — Under Sealed, do Bluetooth audio and hearing devices stay connected?
+
+**Why it matters.** It decides where Bluetooth is enforced (C-06). A full
+radio block is enforceable in the kernel. Keeping selected devices connected
+means the decision is made per link in the Bluetooth stack, which is a
+larger and weaker enforcement point.
+
+- **Option A (recommended).** Disconnect everything at lock by default. A
+  clearly labelled setting keeps audio and hearing devices connected, and is
+  offered at setup when a hearing aid is paired.
+- **Option B.** Keep audio and hearing devices connected by default.
+
+### Q3 — Who operates the lost-device service, and how does it reach a sealed phone?
+
+**Why it matters.** It decides a protocol, a server and the one deliberate
+hole in the seal (C-06).
+
+- **Option A (recommended).** The phone polls an endpoint the owner
+  configures: a relay run by the NottOS project by default, replaceable by a
+  self-hosted one. Commands are signed by the owner's key, so the relay can
+  neither forge nor read them. The owner chooses whether polling may use
+  mobile data, known Wi-Fi networks, or both.
+- **Option B.** No server. Commands arrive by signed SMS. Needs cellular
+  voice and SMS allowed while locked, and exposes the baseband.
+- **Option C.** No lost-device function in the first release.
+
+### Q4 — How faithful must Nott Reader be for office documents?
+
+**Why it matters.** It decides the Reader's architecture and the system
+image size (C-20).
+
+- **Option A (recommended).** Built-in Rust converters give a *readable*
+  rendering of DOCX, XLSX, PPTX, ODF and RTF: text, tables, images and basic
+  styling, reflowed, not page-exact. An optional "high-fidelity office
+  pack", built on an existing office engine confined in the same sandbox,
+  can be installed from the NottOS repository by users who need exact
+  layout.
+- **Option B.** Ship the office engine in the base image. Exact layout for
+  everyone, at a cost of a large, complex C++ component and a substantial
+  share of the image budget.
+- **Option C.** Readable rendering only; no high-fidelity path.
+
+### Q5 — How many independent people will hold release keys?
+
+**Why it matters.** It decides the key ceremony and whether one compromised
+person or machine can sign a malicious release (threat model, A8).
+
+- **Option A (recommended).** At least three holders with a two-of-three
+  rule for release signing, and the offline root split the same way.
+- **Option B.** A single holder (the owner). Simpler, but theft or coercion
+  of one person compromises every device. The transparency log and
+  reproducible builds would then be the only check.
+
+### Q6 — Will the project get a build host and its own repositories?
+
+**Why it matters.** It decides what the next phases can verify (C-15).
+Building AOSP needs at least 64 GB of RAM and 400 GB of disk `[V:F-22]`; the
+current environment has 15 GB and 30 GB. An AOSP derivative also needs many
+repositories, and this session can only write to an existing general one.
+
+- **Option A (recommended).** The owner provides a build machine or cloud
+  budget with hardware virtualisation, and a dedicated organisation for the
+  NottOS repositories, before Phase 1 starts.
+- **Option B.** Continue in this environment. Phases 1 to 5 then deliver
+  host-side Rust components with tests, and every emulator-based acceptance
+  criterion stays UNVERIFIED.
+
+### Q7 — Is a hardware-partner track started now, and may hardware work begin before Phase 6?
+
+**Why it matters.** It decides how late security patches arrive (C-14),
+whether a certification path exists (C-03), and how long hardware-dependent
+designs stay untested (roadmap, risks).
+
+- **Option A (recommended).** Start looking for a partner now, in parallel.
+  Run a small hardware spike alongside Phase 2: boot NottOS with its own key
+  on the candidate Tier A device, to find hardware surprises early.
+- **Option B.** Keep the phase order strictly; first hardware contact in
+  Phase 6; no partner track.
+
+## Part 2 — Conflicts and limits
+
+| ID | Topic | Kind | Status |
 |---|---|---|---|
-| C-01 | Device breadth vs. full security guarantees | Conflict | **Needed** |
-| C-02 | "Best at all four goals" vs. the cost of hardening | Conflict | Assumed |
-| C-03 | Play Integrity verdicts | Impossible as an OS feature | Informational |
-| C-04 | Post-quantum signatures in the boot chain | Limited by hardware | Assumed |
-| C-05 | Evicting keys on every lock | Conflict with the Android app model | **Needed** |
-| C-06 | Sealed by default vs. Bluetooth devices, locate, emergency | Conflict | **Needed** (one sub-point) |
-| C-07 | "Nothing outside user data is writable" | Impossible as written | Assumed |
-| C-08 | Run-from-RAM on the 3 GB floor | Conflict | Assumed |
+| C-01 | Device breadth vs. full security guarantees | Conflict | Resolved by section 13; one addition in ADR-0002 |
+| C-02 | "Best at all four goals" vs. the cost of hardening | Conflict | Assumption |
+| C-03 | Play Integrity verdicts | Not achievable by an OS | Informational |
+| C-04 | Post-quantum signatures in the boot chain | Limited by hardware | Assumption |
+| C-05 | Evicting keys on every lock | Conflict with the app model | **Q1** |
+| C-06 | Sealed vs. Bluetooth devices, locate, emergency | Conflict | **Q2, Q3** |
+| C-07 | "Nothing outside user data is writable" | Impossible as written | Assumption |
+| C-08 | Run-from-RAM on the 3 GB floor | Conflict | Assumption |
 | C-09 | Enforcement in USB and radio firmware | Limited by hardware | Informational |
-| C-10 | All keys in a secure element; SE throttling | Limited by hardware | Assumed |
-| C-11 | Kernel hardening vs. prebuilt vendor modules | Limited by hardware | Assumed |
-| C-12 | seccomp for every process class, including vendor HALs | Costly per device | Assumed |
-| C-13 | Hand-written assembly for cryptography | Unsafe as written | Assumed |
-| C-14 | Timely security patches without partner access | External dependency | **Needed** |
-| C-15 | Building and testing an OS in this environment | Tooling limit | **Needed** |
-| C-16 | Integrity folder "marked immutable" | Wording | Assumed |
-| C-17 | Sections missing from the brief | Input | **Needed** |
+| C-10 | All keys in a secure element | Limited by hardware | Assumption |
+| C-11 | Kernel hardening vs. prebuilt vendor modules | Limited by hardware | Assumption |
+| C-12 | Syscall filters for vendor HALs | Costly per device | Assumption |
+| C-13 | Hand-written assembly for cryptography | Unsafe as written | Assumption |
+| C-14 | Monthly, prompt security patches without partner access | External dependency | **Q7** |
+| C-15 | Building and testing an OS in this environment | Tooling limit | **Q6** |
+| C-16 | Integrity folder "marked immutable" | Wording | Assumption |
+| C-17 | Sections missing from the brief | Input | Resolved |
+| C-18 | System apps "sandboxed like any third-party app" | Impossible for some apps | Assumption |
+| C-19 | Only three default network connections | Too few in practice | Assumption |
+| C-20 | Nott Reader: breadth, fidelity, size and licences | Conflict | **Q4** |
+| C-21 | Per-file keys vs. the inline encryption engine | Conflict | Assumption |
+| C-22 | Tests that "prove" the locked-state policy | Wording; hardware arrives late | Assumption |
+| C-23 | eSIM, VoLTE and VoWiFi need closed components | External dependency | Assumption |
+| C-24 | "Small" system apps; offline speech and captions | Limits | Assumption |
 
-## C-01 — Device breadth vs. full security guarantees
+### C-01 — Device breadth vs. full security guarantees
 
-**Asked for.** The widest practical device compatibility, and on every device
-a relocked bootloader with NottOS keys, secure-element throttling, MTE, USB
-disabled at the controller and IOMMU-isolated radios.
+**Asked for.** Maximum compatibility and maximum security, handled with
+honest tiers A, B and C (section 13).
 
-**Problem.** Those are hardware properties. Few phones have all of them:
-GrapheneOS, with a similar list, supports only Pixels, and even a flagship
-partner's current devices fall short `[V:F-08]`. Custom-key verified boot is
-implemented correctly by only some vendors `[V:F-19]`. A phone at the 3 GB /
-eMMC floor with the full list has not been identified and may not exist
-`[K]`.
+**Remaining problem.** As defined, Tier B holds both devices that verify
+their boot chain with the NottOS key and devices whose bootloader cannot be
+relocked. The second kind has no protection against tampering and cannot be
+attested.
 
-**Closest achievable design.** Three explicit tiers with published per-tier
-guarantees and an on-device posture screen
-([ADR-0002](adr/0002-device-support-tiers.md)).
+**Design.** The brief's tiers, with Tier B divided into B-verified and
+B-unverified as a headline attribute
+([ADR-0002](adr/0002-device-support-tiers.md)). Approved or rejected with
+that ADR.
 
-**Decision needed.** Accept tiers, or restrict NottOS to full-guarantee
-devices only. And: should the unverified-boot Tier 3 exist at all?
-Recommendation: accept tiers; define Tier 3 but ship it late, under a
-different name.
+**Also note.** Tier A hardware is rare `[V:F-08]`, and a Tier A phone at the
+3 GB floor has not been identified `[K]`. The low-end class will probably be
+Tier B.
 
-## C-02 — "Best at all four goals" vs. the cost of hardening
+### C-02 — "Best at all four goals" vs. the cost of hardening
 
-**Asked for.** The best available system at security, speed, low resource
-use and compatibility at once.
+**Problem.** The mandated hardening has a price an unhardened system does
+not pay. Exec-based spawning costs about 200 ms per cold start on flagships
+and more on low-end hardware, plus memory `[V:F-09]`. A hardened allocator,
+zero-on-free, synchronous MTE and control-flow integrity each cost CPU or
+RAM `[K]`.
 
-**Problem.** The mandated hardening has a price that an unhardened system
-does not pay. Exec-based spawning costs about 200 ms per cold start on
-flagships and more on low-end hardware, plus memory `[V:F-09]`. A hardened
-allocator, zero-on-free, synchronous MTE and CFI each cost CPU or RAM `[K]`.
+**Design.** The priority order resolves it: security wins. NottOS aims to be
+the fastest and leanest system *at this security level*, held to explicit
+budgets and a no-regression gate against stock AOSP on the same device, with
+a 10 % allowance on cold start
+([performance-budgets.md](performance-budgets.md)).
 
-**Closest achievable design.** The priority order already resolves this:
-security wins. NottOS aims to be the fastest and leanest system *at this
-security level*, held to explicit budgets
-([performance-budgets.md](performance-budgets.md)) and a no-regression gate
-against stock AOSP on the same device, with a 10 % allowance on cold start.
+**Assumption.** Where a budget and a mandated mitigation collide on the
+low-end class, the mitigation stays, the measured cost is reported, and the
+owner is asked before anything is relaxed.
 
-**Assumption.** Where a budget and a mandated mitigation collide on class L,
-the mitigation stays, the measured cost is reported, and the owner is asked
-before any mitigation is relaxed.
+### C-03 — Play Integrity verdicts
 
-## C-03 — Play Integrity verdicts
-
-**Asked for.** Keep every integrity signal that can be kept legitimately.
-
-**What is and is not achievable**, from Google's current definitions
-`[V:F-05]`:
+From Google's current definitions `[V:F-05]`:
 
 | Verdict | Requires | NottOS |
 |---|---|---|
 | `MEETS_BASIC_INTEGRITY` | On Android 13+, "only that the attestation root of trust is provided by Google" | Plausibly obtainable on hardware with Google-rooted attestation keys. UNVERIFIED until tested. Returned only to apps installed through Google Play. |
-| `MEETS_DEVICE_INTEGRITY` | "a genuine and certified Android device [...] the loaded Android OS is a certified device manufacturer image" | **Not obtainable.** NottOS is not a certified manufacturer image. |
-| `MEETS_STRONG_INTEGRITY` | Device integrity plus recent patches on all partitions | **Not obtainable**, for the same reason. |
+| `MEETS_DEVICE_INTEGRITY` | "a genuine and certified Android device [...] the loaded Android OS is a certified device manufacturer image" | **Not obtainable.** |
+| `MEETS_STRONG_INTEGRITY` | Device integrity plus recent patches on all partitions | **Not obtainable.** |
 
-Apps that demand device or strong integrity (many banking apps) will refuse
-to run, as they do on GrapheneOS `[V:F-10]`. No engineering inside NottOS
-changes that. NottOS will not spoof verdicts, fingerprints or attestation.
+Apps that demand device or strong integrity, which includes many banking
+apps, will refuse to run, as they do on GrapheneOS `[V:F-10]`. Nothing
+inside NottOS changes that. NottOS will not spoof verdicts, fingerprints or
+attestation.
 
-**What NottOS does instead.** Full hardware key attestation with verified
-boot, a published and signed list of verified-boot key fingerprints, and a
-developer guide so that apps can allowlist NottOS directly, as GrapheneOS
-does `[V:F-10]`.
+**What NottOS does.** Full hardware key attestation with verified boot; a
+published, signed list of verified-boot key fingerprints; a developer guide
+for allowlisting NottOS directly `[V:F-10]`.
 
-**Separate track.** Certification means CDD compliance, passing CTS and a
-commercial agreement with Google `[V:F-21]`, which in practice needs a
-hardware partner. Several NottOS features are likely CDD deviations and
-would have to be optional or absent in a certified build; that gap list is a
-later deliverable.
+**Separate track.** Certification needs compliance with the compatibility
+definition, passing CTS and a commercial agreement with Google `[V:F-21]`,
+which in practice needs a hardware partner (Q7). Several NottOS features are
+likely deviations and would have to be optional in a certified build; the
+gap list is a Phase 7 deliverable.
 
-One side effect worth knowing: Google's developer-verification rules, now
-enforced in Brazil, apply to certified devices `[V:F-14]`. They do not apply
-to NottOS.
+Google's developer-verification rules, now enforced in Brazil, apply to
+certified devices `[V:F-14]`. They do not apply to NottOS.
 
-## C-04 — Post-quantum signatures in the boot chain
-
-**Asked for.** Hybrid classical plus post-quantum signatures on verified-boot
-metadata "where the bootloader permits", and SLH-DSA for long-lived roots.
+### C-04 — Post-quantum signatures in the boot chain
 
 **Problem.** The bootloader verifies the first NottOS image, and NottOS
-cannot change the bootloader of an existing phone. Android 17's verified-boot
-library is gaining ML-DSA `[V:F-07]`, but Google has not said that existing
-devices' bootloaders will be updated, and the supported parameter sets could
-not be confirmed `[V:F-20]`. A post-quantum check added later in the boot
-(inside NottOS's own early init) is itself only protected by the classical
-signature the bootloader checked, so it does not stop an attacker who can
-forge that classical signature.
+cannot change the bootloader of an existing phone. Android 17's
+verified-boot library is gaining ML-DSA `[V:F-07]`, but Google has not said
+that existing bootloaders will be updated, and the supported parameter sets
+could not be confirmed `[V:F-20]`. A post-quantum check added later in the
+boot is itself protected only by the classical signature the bootloader
+checked.
 
-**Closest achievable design.**
+**Design.**
 
-- **Updates, repository metadata, backups, device transfer:** fully hybrid
-  from day one. NottOS controls both ends.
-- **Boot chain on existing devices:** the strongest classical algorithm the
-  bootloader accepts, plus a hybrid-signed build manifest verified by the
-  updater before installation and by the Verify app.
-- **Boot chain on devices whose bootloader verifies ML-DSA:** use it.
-- **SLH-DSA** for the offline root keys that certify update-signing keys.
+- Updates, repository metadata, backups and device transfer: fully hybrid
+  from the first release. NottOS controls both ends.
+- Boot chain on existing devices: the strongest classical algorithm the
+  bootloader accepts, plus a hybrid-signed build manifest checked by the
+  updater before installation and by Verify system.
+- Boot chain where the bootloader verifies ML-DSA: use it.
+- SLH-DSA for the offline root keys.
 
-**Why this is acceptable.** Forging a boot signature needs a quantum computer
-*at the time of the attack* and physical access. Recorded ciphertext cannot be
-attacked later through this path. The update channel, which is reachable
-remotely, is the one that most needs post-quantum signatures, and it gets
-them.
+**Why acceptable.** Forging a boot signature needs a quantum computer at the
+time of the attack, and physical access. Nothing recorded today can be
+attacked later through this path. The update channel is reachable remotely
+and gets post-quantum signatures.
 
-## C-05 — Evicting keys on every lock
-
-**Asked for.** "On lock, evict keys for data that does not need to be
-available while locked."
+### C-05 — Evicting keys on every lock
 
 **Problem.** Android has two storage classes: available after boot, and
-available after first unlock. Apps assume that after the first unlock their
-files stay readable while the screen is locked: alarms, messaging, music
-playback, background sync `[K]`. Evicting the main profile's keys at every
-lock would break most apps. There is no upstream storage class that means
-"only while unlocked".
+available after the first unlock `[V:F-23]`. Apps assume their files stay
+readable while the screen is locked. Evicting the main profile's keys at
+every lock breaks most of them. No upstream class means "only while
+unlocked".
 
-**Closest achievable design.** Evict-on-lock is offered where it is safe:
+**Design.** Graded eviction; see **Q1**.
 
-1. **Keystore keys** marked as requiring an unlocked device are unusable
-   while locked (upstream behaviour `[K]`).
-2. **Whole profiles and the private space** can be set to end their session
-   at lock, which evicts their keys. The cost is that their apps stop.
-3. **A new opt-in storage class for apps that ask for it**, with a per-app
-   key evicted at lock. Existing apps would not use it without changes.
-4. **Auto-reboot** returns everything to BFU after the configured locked
-   time.
-
-**Decision needed.** Is this graded model acceptable, or does the owner want
-the main profile's keys evicted at lock by default, accepting that most apps
-lose background function while locked?
-
-## C-06 — Sealed by default vs. Bluetooth devices, locate, emergency
-
-**Asked for.** Sealed as the default: nothing passes on any radio while
-locked; plus emergency calls in every mode, and an owner-authenticated
-locate/lock/wipe path that works under Sealed.
+### C-06 — Sealed vs. Bluetooth devices, locate, emergency
 
 **Problems.**
 
-1. **Locating a lost phone requires a network connection.** A truly sealed
-   device cannot be reached.
-2. **Emergency calls on 4G and 5G are IP traffic** (IMS). On some devices the
-   IMS stack runs on the application processor `[K]`, so a blanket IP drop
-   would block the call. Wi-Fi calling emergency calls need a tunnel over
-   Wi-Fi.
-3. **Bluetooth is mostly not IP.** A literal "drop IP" rule leaves audio,
-   watches, hearing aids and car links untouched; a literal "sealed box"
-   disconnects them all at every lock, including music with the screen off
-   and hearing aids.
+1. Locating a lost phone needs a network connection; a sealed phone has
+   none.
+2. Emergency calls on 4G and 5G are IP traffic. On some devices that stack
+   runs on the application processor `[K]`, so a blanket IP drop would block
+   the call.
+3. Bluetooth is mostly not IP. "Drop IP" leaves audio, watches and hearing
+   aids untouched; "sealed box" disconnects them all at every lock.
 
-**Closest achievable design.**
+**Design.**
 
-- Sealed covers IP *and* the link layer: Wi-Fi, Bluetooth, NFC and UWB are
-  powered down or blocked, not just filtered.
-- **Emergency exception:** starting an emergency call opens only the bearer
-  or tunnel that call needs, for its duration, in every mode.
-- **Locate exception (opt-in):** one system service, one pinned endpoint,
-  outbound polling only, commands signed by the owner's key. The owner
-  chooses the channel (mobile data, known Wi-Fi) and accepts that it is a
-  deliberate hole in the seal.
-- **Bluetooth devices connected before lock** follow the same setting as USB
-  accessories: default disconnect on lock.
-
-**Decision needed (one point).** Under Sealed, should Bluetooth audio and
-hearing devices that were connected before lock stay connected by default?
-Recommendation: disconnect by default for consistency with the "sealed box"
-goal, with a clearly labelled setting to keep audio and hearing devices, and
-that setting pre-enabled when a hearing aid is paired.
+- Sealed covers the link layer too: Wi-Fi, Bluetooth, NFC and UWB are
+  powered down or blocked.
+- Emergency exception: starting an emergency call opens only what that call
+  needs, for its duration, in every mode.
+- Locate exception, opt-in: one service, one endpoint, outbound polling,
+  owner-signed commands. See **Q3**.
+- Bluetooth devices connected before lock: see **Q2**.
 
 **Stated consequence of the Sealed default.** No notifications, messages or
-internet calls arrive while locked. The owner has already chosen this; it is
-recorded here so that it reaches the setup screen in plain words.
+internet calls arrive while locked. The setup wizard must say so in plain
+words.
 
-## C-07 — "Nothing outside the encrypted user-data partition is writable"
+### C-07 — "Nothing outside the encrypted user-data partition is writable"
 
 **Problem.** Real devices have small writable partitions outside user data
-that the hardware and Android itself need: the partition that holds
-encrypted key blobs and update state, the bootloader's control block, vendor
-calibration data, and modem state `[K]`. They cannot be made read-only
-without breaking boot, updates or the radio.
+that the hardware and Android need: encrypted key blobs and update state,
+the bootloader's control block, vendor calibration data, modem state `[K]`.
 
-**Closest achievable design.** Enumerate them per device; mount them
-`nosuid,nodev,noexec`; allow writes only from the specific domains that own
-them; forbid executable content; audit what is stored. All volatile *system*
-state stays in tmpfs. This is invariant INV-02 in the threat model.
+**Design.** Enumerate them per device; mount them without execute, device or
+set-uid permissions; allow writes only from the domains that own them; audit
+what is stored. All volatile system state stays in tmpfs (INV-02).
 
-## C-08 — Run-from-RAM on the 3 GB floor
+### C-08 — Run-from-RAM on the 3 GB floor
 
-**Problem.** Loading the system image into RAM on a 3 GB phone would take
-about 40 % of memory from apps. The brief anticipated this.
-
-**Closest achievable design.** Three levels (pinned hot set, extended pin,
-Full RAM mode) selected by a per-class RAM budget; Full RAM and amnesic modes
-only from 12 GB (amnesic optionally at 8 GB with a small cap)
+**Design.** Three levels (pinned hot set, extended pin, Full RAM mode)
+selected by a per-class RAM budget; Full RAM and amnesic modes only from
+12 GB, amnesic optionally at 8 GB with a small cap
 ([performance-budgets.md](performance-budgets.md), sections 3 and 4).
 
-## C-09 — Enforcement in USB controller and radio firmware
+### C-09 — Enforcement in USB controller and radio firmware
 
-**Limit.** That firmware is closed. NottOS can only use the controls the
-vendor exposes: a USB HAL call or port-controller register to disable data;
-power-down or block switches for radios. Where such a control exists it is
-used; where it does not, enforcement is in the kernel only, and the device's
-posture screen says so. Whether a powered-down radio is really silent can be
-checked in a lab with RF measurement, not proven from software.
+**Limit.** That firmware is closed. NottOS uses the controls the vendor
+exposes and enforces in the kernel everywhere. Whether a powered-down radio
+is really silent can be measured in a lab, not proven from software.
 
-## C-10 — All keys in a secure element; throttling by the secure element
+### C-10 — All keys in a secure element
 
-**Limit.** Many phones, including most of class L, have a TEE but no secure
-element `[K]`. There, throttling is done by the TEE: still outside the OS,
-but weaker against physical attack. Irreversible key destruction for the
-duress PIN is also strongest with a secure element.
+**Limit.** Many phones have a TEE but no secure element `[K]`. There,
+throttling is done by the TEE: still outside the OS, but weaker against
+physical attack. Irreversible key destruction is also strongest with a
+secure element.
 
-**Assumption.** Tier 1 requires a secure element. Tier 2 without one requires
-a passphrase rather than a short PIN at setup, and says why.
+**Assumption.** Tier A requires a secure element (as section 13 says).
+Tier B devices without one must use a passphrase rather than a short PIN,
+and are told why.
 
-## C-11 — Kernel hardening vs. prebuilt vendor modules
+### C-11 — Kernel hardening vs. prebuilt vendor modules
 
-**Limit.** Vendor kernel modules are built against a fixed kernel module
-interface. Hardening options that change it need the modules rebuilt from
-source, which is possible only when the vendor publishes usable source.
-"No module loading after boot" also requires loading every module at boot,
-including ones the vendor loads on demand, at some memory cost `[K]`.
+**Limit.** Hardening options that change the kernel module interface need
+vendor modules rebuilt from source. "No module loading after boot" requires
+every module to be loaded at boot, at some memory cost `[K]`.
 
-**Assumption.** Two hardening profiles (ADR-0001, D2). Devices that cannot
-take the full profile are capped at Tier 2 and the gap is shown.
+**Assumption.** Full profile on Tier A; on Tier B, only what the vendor's
+kernel allows, shown on the posture screen.
 
-## C-12 — seccomp for every process class
+### C-12 — Syscall filters for vendor HALs
 
-**Limit.** Upstream does not apply syscall filters to most vendor HAL
-processes. Doing so needs a per-device trace of what each closed binary
-calls, and a wrong filter breaks hardware.
+**Limit.** Upstream does not filter most vendor HAL processes. Doing so
+needs a per-device trace of what each closed binary calls.
 
-**Assumption.** Filters for all NottOS and AOSP process classes from the
-start. Vendor HAL filters are generated per device from traces, start in a
-logging mode on engineering builds only, and are enforced in production once
-stable. A device's posture screen lists any HAL still unfiltered.
+**Assumption.** Filters for every NottOS and AOSP process class from the
+start. Vendor HAL filters are generated per device from traces and enforced
+once stable; the vendor binary manifest shows which are enforced.
 
-## C-13 — Hand-written assembly for cryptographic primitives
+### C-13 — Hand-written assembly for cryptography
 
-**Asked for.** Assembly for crypto primitives, with constant-time behaviour
-and known-answer tests; and, separately, "never design new primitives" and
-"use vetted implementations, formally verified where available".
+**Problem.** Section 4 asks for assembly in cryptographic primitives.
+Section 9 says "use vetted implementations, formally verified where
+available, and never design new primitives". New cryptographic assembly is
+where timing leaks come from, and the vetted libraries already contain
+reviewed, hardware-accelerated assembly.
 
-**Problem.** Writing new assembly for AES, SHA or ML-KEM contradicts the
-second requirement. New crypto assembly is where timing leaks and carry bugs
-come from, and the existing vetted libraries already contain reviewed,
-hardware-accelerated assembly.
+**Design.** For cryptography, NottOS uses the assembly inside vetted
+libraries and the kernel's crypto subsystem and writes none of its own,
+unless no vetted implementation exists for a needed primitive and platform.
+The assembly policy applies in full to non-cryptographic routines. No
+assembly is written before a device lab exists to measure it (Phase 6).
 
-**Closest achievable design.** For cryptography, NottOS *uses* the assembly
-in vetted libraries and in the kernel's crypto subsystem, and adds none of
-its own unless no vetted implementation exists for a needed primitive and
-platform. The owner's assembly policy (reference implementation, differential
-tests, measured gain) applies fully to non-crypto routines such as pixel
-loops, checksums and compression. No assembly at all is written before a
-device lab exists to measure it.
+### C-14 — Monthly, prompt security patches without partner access
 
-## C-14 — Timely security patches without partner access
+**Asked for.** "Monthly security patches merged promptly" (section 14).
 
-**Problem.** NottOS's security depends on shipping fixes quickly, but AOSP
-source now arrives twice a year `[V:F-12]`, most security fixes are released
-quarterly `[V:F-13]`, and device-specific code for the reference phones is no
-longer public `[V:F-11]`. Device makers receive fixes under embargo before
-publication; an independent project does not.
+**Problem.** Upstream changed. AOSP source arrives twice a year `[V:F-12]`,
+monthly bulletins now carry only high-risk issues with most fixes shipped
+quarterly `[V:F-13]`, and device-specific code for the reference phones is
+no longer public `[V:F-11]`. Device makers receive fixes under embargo; an
+independent project does not.
 
-**Consequence.** Without a partner agreement, NottOS can be at best a few
-days behind public release and can never be ahead of it.
+**Consequence.** NottOS can merge what is published as soon as it is
+published. It cannot be ahead of publication, and on Tier B it cannot patch
+vendor firmware at all.
 
-**Decision needed.** Whether to pursue a hardware-partner or licensee
-relationship as a parallel track from the start. Recommendation: yes; it is
-also the prerequisite for the certification track (C-03) and for a device
-that would exceed Tier 1.
+**Design.** Automated rebase onto each upstream security release; patch
+level and age shown in Verify system; partner track. See **Q7**.
 
-## C-15 — Building and testing an OS in this environment
+### C-15 — Building and testing an OS in this environment
 
-**Limit.** The current development environment has 4 CPU cores, 15 GiB of
-RAM, about 30 GB of free disk, no emulator and no AArch64 toolchain
-([fact-check.md](fact-check.md)). AOSP cannot be built or booted here.
+**Limit.** 4 CPU cores, 15 GiB RAM, about 30 GB of free disk, no emulator,
+no AArch64 toolchain ([fact-check.md](fact-check.md)). AOSP needs at least
+64 GB RAM and 400 GB disk `[V:F-22]`.
 
-**What can be done here.** Design documents; host-side Rust components with
-unit tests and fuzzing (formats, signature verification, policy engines,
-parsers, build tooling).
+**Possible here.** Design documents; host-side Rust components with unit
+tests and fuzzing.
 
-**What cannot.** Building system images, booting Cuttlefish, running CTS,
-measuring any budget, anything on a real device.
+**Not possible here.** Building system images, booting the emulator,
+running CTS, measuring any budget, anything on a real device. See **Q6**.
 
-**Decision needed.** Provide a build host (large disk and memory, hardware
-virtualisation) and, later, test devices; or accept that the next phases
-deliver only host-side components and that everything else stays UNVERIFIED.
-
-## C-16 — Integrity folder "marked immutable"
+### C-16 — Integrity folder "marked immutable"
 
 **Wording.** The system image is a read-only filesystem format protected by
-dm-verity. It has no per-file immutable flag to set, and needs none: no file
-on it can be changed by anything, root included, without failing
-verification at the next read. The layering asked for is kept (verified
-read-only image, dedicated SELinux type, no write rule), and "immutable"
-is satisfied by the filesystem rather than by an attribute. The path
-`/nott/attest` is feasible as a directory in the root of the system image.
+dm-verity. It has no per-file immutable flag, and needs none: nothing on it
+can be changed by anything, root included, without failing verification at
+the next read. The layering asked for is kept (verified read-only image,
+dedicated SELinux type, no write rule for any production domain).
+`/nott/attest` is feasible as a directory in the root of the system image
+and is the proposed final path.
 
-## C-17 — Sections missing from the brief
+Because the image cannot be written in place, "root write access" in an
+owner-enabled root mode cannot mean editing that directory on the verified
+image. It would mean an overlay or a rebuilt image, with verified boot no
+longer attesting the original. The root-mode ADR must say which.
 
-The brief as received ends in the middle of section 11 (Nott Reader), at a
-bullet beginning "Sc". Sections 12 to 15 did not arrive, including the phase
-list in section 15 that section 2 refers to.
+### C-17 — Sections missing from the brief
 
-**Assumption used for Phase 0.** Phase 0 is: ADR-0001, the threat model, the
-performance budgets, and this review. That reading is supported by sections
-2, 4, 5 and 6 of the brief.
+Resolved. The complete brief was received and Phase 0 now follows
+section 15.
 
-**Decision needed.** Resend the end of section 11 and sections 12 to 15
-before Phase 1 is planned.
+### C-18 — System apps "sandboxed like any third-party app"
+
+**Problem.** Some listed apps cannot work without privileges no third-party
+app can hold: the dialer and telephony (emergency calling, call control),
+the SMS/MMS handler, Settings, the system updater, backup and restore,
+Verify system (reads system partitions), the setup wizard, and the
+repository client (installs packages).
+
+**Design.** Every system app runs in its own app sandbox and is updated and
+confined like any app. Those that need a platform privilege get exactly
+that privilege, listed in a published per-app table and checked in CI
+(roadmap, criterion 5.1). Apps that need none hold none
+([architecture.md](architecture.md), section 2.3).
+
+### C-19 — Only three default network connections
+
+**Asked for.** The only default connections are updates, time and
+connectivity check (section 6).
+
+**Problem.** A phone with the functions in section 12 makes a few more:
+attestation key provisioning on devices whose keystore requires it;
+satellite-positioning assistance data; carrier registration for VoLTE and
+VoWiFi; browser security data; DRM provisioning on first protected
+playback. GrapheneOS's published list shows the same set `[V:F-24]`.
+
+**Design.** Keep the three as the only connections made by a fresh device
+that has no SIM and has not enabled location. Everything else happens only
+when the feature that needs it is first used, is listed in Settings with its
+endpoint and a switch, and carries no device identifier
+([architecture.md](architecture.md), section 7).
+
+**Assumption.** The owner accepts that list. Any item can be struck, with
+the consequence shown in that table.
+
+### C-20 — Nott Reader: breadth, fidelity, size and licences
+
+**Problems.**
+
+1. **Office formats.** Page-exact rendering of DOCX, XLSX, PPTX and the
+   legacy binary formats needs a full office layout engine. Writing one in
+   Rust is years of work. Existing engines are large C++ code bases; they
+   can be confined by the sandbox but weigh heavily on the image budget.
+   See **Q4**.
+2. **CBR.** These are RAR archives. The reference RAR decoder's licence is
+   not an open-source licence `[K]`. NottOS would use an independent,
+   permissively licensed decoder, which may not handle every RAR variant.
+3. **HEIF.** Most HEIF images use HEVC, which is patent-encumbered `[K]`. A
+   software decoder inside the sandbox raises a licensing question; the
+   device's own licensed hardware decoder is closed vendor code handling
+   untrusted input. The choice goes in the Reader ADR; until then HEIF
+   fidelity is listed as "depends on device".
+4. **Digital signatures.** Verifying a signature needs trust anchors and,
+   for revocation, network access, which the Reader does not have. The
+   Reader can verify integrity and the certificate chain against a bundled
+   trust list, and must label revocation as "not checked".
+
+**Design.** A published matrix with a fidelity level per format, never a
+blanket "supported": faithful (PDF, images, text, EPUB), readable (office,
+RTF, HTML, e-mail), container (archives), device-dependent (HEIF).
+
+### C-21 — Per-file keys vs. the inline encryption engine
+
+**Asked for.** Per-profile and per-file keys, and the SoC's inline
+encryption engine where it can be trusted (section 9).
+
+**Problem.** Inline engines have few key slots. Android's mode for them
+"derives just one file contents encryption key per CE or DE key, rather than
+one per file", with a unique IV per file `[V:F-23]`. The two requests cannot
+both hold on the same device.
+
+**Trade-off.** With an inline engine and hardware-wrapped keys, the raw
+storage key never exists in kernel memory, which is a real gain against
+memory-extraction attacks on a locked device. Per-file keys limit the
+damage of a single key's exposure. For AES-XTS with unique IVs, the
+cryptographic difference between the two is small.
+
+**Assumption.** Where a device audit trusts the inline engine: wrapped keys,
+per-profile contents keys, per-file IVs. Elsewhere: software encryption with
+per-file keys. Recorded per device on the posture screen and fixed in the
+storage ADR.
+
+### C-22 — Tests that "prove" the locked-state policy
+
+**Asked for.** Tests "must prove that no packet and no USB transaction
+passes while the device is locked" (section 14).
+
+**Limit.** A test shows that nothing passed in the scenarios run. Combined
+with a design in which the default is drop and one small component owns the
+controls, that is strong evidence. It is not a proof in the mathematical
+sense, and on the emulator it says nothing about a real USB controller or a
+real radio.
+
+**Design.** Emulator capture over a scenario matrix in Phase 4; USB protocol
+analyser, access-point capture and RF measurement on hardware in Phase 6.
+Phase reports use the word "verified" only for what was measured.
+
+### C-23 — eSIM, VoLTE and VoWiFi need closed components
+
+**Problems.**
+
+- AOSP contains no eSIM profile manager; one must be added as a privileged
+  system app. An open-source one exists `[V:F-26]`.
+- VoLTE and VoWiFi stacks are closed vendor components tied to carrier
+  configuration. On generic-image installs they frequently do not work
+  `[K]`.
+- As older networks are retired, a phone without working VoLTE may be unable
+  to place any call, emergency calls included.
+
+**Design.** Emergency calling is a gating test for every device in every
+tier (ADR-0002, rule 3). The eSIM manager and its privilege are recorded in
+an ADR. VoLTE and VoWiFi status per device and carrier is published, never
+assumed.
+
+### C-24 — "Small" system apps; offline speech and captions
+
+- **Browser and WebView.** A Chromium-based engine is neither small nor
+  cheap to maintain: it needs frequent security rebuilds on large build
+  machines. NottOS should reuse an existing hardened build as its upstream
+  rather than maintain its own patch set from scratch (Reader and browser
+  ADRs).
+- **Text-to-speech.** Offline voices of good quality for Brazilian
+  Portuguese exist under open licences, but the best ones are large and slow
+  on low-end hardware `[K]`. The choice, with size and licence, goes in an
+  ADR.
+- **Captions.** Assumed to mean the system caption support for media that
+  carries caption tracks. Automatic captioning of arbitrary audio needs an
+  on-device speech-recognition model, which is large; it is treated as a new
+  feature the owner would have to request.

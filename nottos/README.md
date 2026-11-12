@@ -18,24 +18,34 @@ stays within regulatory limits.
 
 ## Status
 
-**Phase 0 — architecture and threat model. Design documents only.**
+**Phase 0 — architecture. Design documents only.**
 
 - No NottOS code exists yet.
 - Nothing has been compiled, booted, tested or measured. Every performance
   number in this repository is a *proposed target*, not a result.
-- Phase 0 is awaiting owner approval. No later phase has started.
+- Phase 0 is complete and awaiting owner approval. No later phase has
+  started.
 
 ## Documents
 
+The six Phase 0 deliverables (brief, section 15):
+
+| # | Deliverable | Document |
+|---|---|---|
+| 1 | Conflicts and impossibilities, with proposed resolutions | [docs/requirements-review.md](docs/requirements-review.md), part 2 |
+| 2 | Up to seven questions for the owner | [docs/requirements-review.md](docs/requirements-review.md), part 1 |
+| 3 | ADR-0001 and the threat model | [docs/adr/0001-base-architecture.md](docs/adr/0001-base-architecture.md), [docs/threat-model.md](docs/threat-model.md) |
+| 4 | High-level architecture: components, boot flow, key hierarchy, locked-state enforcement points | [docs/architecture.md](docs/architecture.md) |
+| 5 | Performance budgets per device class | [docs/performance-budgets.md](docs/performance-budgets.md) |
+| 6 | Repository layout and roadmap with acceptance criteria | [docs/repository-layout.md](docs/repository-layout.md), [docs/roadmap.md](docs/roadmap.md) |
+
+Supporting documents:
+
 | Document | Purpose |
 |---|---|
-| [docs/adr/0001-base-architecture.md](docs/adr/0001-base-architecture.md) | Decision zero: hardened AOSP derivative vs. container/VM vs. microkernel |
-| [docs/adr/0002-device-support-tiers.md](docs/adr/0002-device-support-tiers.md) | How "widest device support" and "full security guarantees" are reconciled |
-| [docs/threat-model.md](docs/threat-model.md) | Assets, adversaries, mitigations, residual risk, testable invariants |
-| [docs/performance-budgets.md](docs/performance-budgets.md) | Device classes, proposed budgets, RAM budget for run-from-RAM, how CI will measure |
-| [docs/requirements-review.md](docs/requirements-review.md) | Requirements that are impossible, unsafe or in conflict, with the closest achievable design and the decisions the owner must take |
+| [docs/adr/0002-device-support-tiers.md](docs/adr/0002-device-support-tiers.md) | Tiers A, B and C made testable |
 | [docs/fact-check.md](docs/fact-check.md) | Fast-moving facts checked on 2026-11-12, with sources and confidence |
-| [docs/adr/README.md](docs/adr/README.md) | ADR index, process and template |
+| [docs/adr/README.md](docs/adr/README.md) | ADR index, planned ADRs, process and template |
 
 ## Evidence tags
 

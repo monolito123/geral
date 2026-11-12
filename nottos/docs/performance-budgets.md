@@ -22,7 +22,7 @@ by the method in section 6.
 | CPU | 8 little cores, or 2 older big + 6 little | 2–4 big + little (ARMv8.2–ARMv9.0) | prime + big cores (ARMv9.2 or later) |
 | Display | 720p–1080p, 60–90 Hz | 1080p, 90–120 Hz | 1080p–1440p, 120 Hz |
 | Typical security hardware | TEE only | TEE, sometimes a secure element | Secure element; MTE on some |
-| Likely tier (ADR-0002) | 2 or 3 | 2 | 1 or 2 |
+| Likely tier (ADR-0002) | B | B, a few A | A or B |
 
 The reference configuration for budget tables is 3 GB for L, 8 GB for M and
 12 GB for H.
@@ -252,7 +252,7 @@ What NottOS relies on upstream for, and where it depends on the device. All
 | Video | Hardware codecs through the standard codec HAL; software codecs sandboxed | Vendor codec HAL |
 | Storage encryption | Inline encryption engine with hardware-wrapped keys where trustworthy; Adiantum where the CPU has no AES instructions | SoC engine; device audit |
 | CPU crypto and vector | AES, SHA-2, polynomial multiply; NEON everywhere; SVE2 where present | Runtime feature detection |
-| Memory tagging | MTE synchronous mode for kernel and userspace | Tier 1 devices only |
+| Memory tagging | MTE synchronous mode for kernel and userspace | Devices that have MTE (some Tier A) |
 | Fast storage features | Command queueing on eMMC; write booster and background operations control on UFS | Device firmware |
 | NPU and DSP | Only through open, documented interfaces | Few devices qualify |
 
@@ -285,8 +285,8 @@ in the others, and passes differential and constant-time tests.
 
 ## 7. What is needed before any number is real
 
-1. A build host able to build AOSP (this development environment cannot; see
-   [fact-check.md](fact-check.md)).
+1. A build host able to build AOSP: at least 64 GB of RAM and 400 GB of disk
+   `[V:F-22]`. This development environment cannot.
 2. One real device per class, plus a power monitor.
 3. A stock AOSP baseline measured on those devices.
 

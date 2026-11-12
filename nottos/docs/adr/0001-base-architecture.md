@@ -161,7 +161,8 @@ Concrete commitments:
 | D7 | **Trimming:** remove system apps and services NottOS does not need. Every removal is checked against CTS and recorded as a deliberate deviation if a test depends on it. |
 | D8 | **Google Play:** not preinstalled and never privileged. Optional, user-installed, sandboxed. |
 | D9 | **Virtualization:** AVF/pKVM is used as an *optional* extra isolation tier on devices that support it. No NottOS guarantee may depend on it, because most devices cannot provide it `[V:F-16]`. |
-| D10 | **Reference target:** Cuttlefish (arm64 and x86_64), which is AOSP's own reference device `[V:F-11]`, for development and functional CI. Physical devices follow ADR-0002. Performance numbers from Cuttlefish never count as device results. |
+| D10 | **Reference target:** Cuttlefish (arm64 and x86_64), which is AOSP's own reference device `[V:F-11]`, for development and functional CI. It is the first "device", so development needs no hardware. Physical devices follow ADR-0002. Performance numbers from Cuttlefish never count as device results. |
+| D11 | **Architectures:** AArch64 first; x86-64 for emulators and tablets; RISC-V kept buildable for NottOS's own code. Device-specific code is isolated as described in [../architecture.md](../architecture.md), section 3. |
 
 Language policy, restated from the owner's brief so that it is binding on
 later ADRs: Rust for new system code; C only where an existing interface
@@ -211,7 +212,7 @@ shows a gain.
 |---|---|
 | Upstream closes further (source, kernels, device support) | Keep the device abstraction clean; seek a hardware partner; track GrapheneOS and other AOSP derivatives for shared infrastructure |
 | Hardening breaks apps | Per-app compatibility toggles, as GrapheneOS does `[V:F-09]`; CTS and an app-compatibility corpus in CI |
-| Vendor kernel modules cannot be rebuilt | Device is limited to interface-neutral hardening and a lower tier (ADR-0002) |
+| Vendor kernel modules cannot be rebuilt | Device is limited to interface-neutral hardening and to Tier B (ADR-0002) |
 | Security patches arrive late | Automated rebase pipeline; publish patch level and age honestly in the Verify app; pursue partner access |
 
 ## What is taken from the rejected options

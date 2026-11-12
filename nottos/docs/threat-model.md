@@ -1,9 +1,11 @@
 # NottOS threat model
 
-- **Version:** 0.1 (Phase 0 draft, awaiting owner approval)
+- **Version:** 0.2 (Phase 0, awaiting owner approval; tiers renamed to the
+  brief's A, B and C)
 - **Date:** 2026-11-12
 - **Depends on:** [ADR-0001](adr/0001-base-architecture.md) (hardened AOSP on
-  Linux), [ADR-0002](adr/0002-device-support-tiers.md) (device tiers)
+  Linux), [ADR-0002](adr/0002-device-support-tiers.md) (device tiers).
+  The mechanisms are placed in [architecture.md](architecture.md).
 
 Nothing in this document has been implemented or tested. Mitigations are
 design intent. Evidence tags are explained in the [README](../README.md).
@@ -33,8 +35,9 @@ Guarantees differ by state, and attackers choose the state they attack in.
 | **AFU, locked** | Locked after having been unlocked | Keys of data that must stay available while locked. Evict-on-lock classes are gone. |
 
 Boot states follow Android Verified Boot: locked with the NottOS key (the
-"yellow" state, which is NottOS's normal state on Tier 1 and 2), unlocked
-("orange", Tier 3 or development), verification failed ("red", does not boot)
+"yellow" state, which is NottOS's normal state on Tier A and on Tier B
+devices with verified boot), unlocked ("orange": Tier B devices without
+verified boot, and development), verification failed ("red", does not boot)
 `[K]`. Owner-enabled root is a distinct, visible boot state defined in a later
 ADR.
 
@@ -61,7 +64,8 @@ NottOS **does not trust**, and designs to contain:
   not from the transport or the server).
 
 How much the trusted parts deserve that trust depends on the device tier.
-On Tier 3 the bootloader does not verify NottOS at all.
+On Tier B devices without verified boot, the bootloader does not verify
+NottOS at all. Tier C community ports carry no claims.
 
 ## 4. Adversaries
 
@@ -85,7 +89,7 @@ Bluetooth, NFC, UWB and Wi-Fi management frames.
 - **Sealed locked state**: while the device is locked, the network attack
   surface is closed (section 6). A phone spends most of its life locked.
 - New parsers and network-facing daemons in Rust. Hardened allocator and,
-  on Tier 1, MTE for the remaining C and C++.
+  where the device has it, MTE for the remaining C and C++.
 - Each network-facing service in its own SELinux domain with a seccomp filter.
   Media decoding stays in sandboxed codec processes.
 - Hardened browser and WebView with site isolation; JIT off by default.
@@ -121,7 +125,7 @@ exfiltrate data beyond what was granted, persist.
   SELinux ioctl allowlists on device nodes an app can reach, GPU included
   where the driver permits.
 - Exec-based spawning: no address-space layout shared between apps.
-- Hardened allocator and MTE (Tier 1) for native app code, with a per-app
+- Hardened allocator, and MTE where the device has it, for native app code, with a per-app
   compatibility switch.
 - Network and Sensors permissions; Storage Scopes and Contact Scopes; global
   camera and microphone switches; clipboard, background, location-precision,
@@ -137,7 +141,7 @@ exfiltrate data beyond what was granted, persist.
 
 - **Kernel privilege escalation through a vendor driver** (GPU first). This
   is the most realistic sandbox escape and the code is not ours. Reduced by
-  ioctl filtering, MTE in the kernel on Tier 1 and fast patching; not
+  ioctl filtering, MTE in the kernel where available and fast patching; not
   eliminated.
 - Abuse of permissions the user really granted.
 - Side channels and covert channels between colluding apps.
@@ -185,7 +189,7 @@ traffic, reach debug interfaces.
 
 **Mitigations.**
 
-- **Locked: data lines off.** At the port controller on Tier 1 and where the
+- **Locked: data lines off.** At the port controller on Tier A and wherever the
   USB HAL supports it; in the kernel everywhere. No enumeration in either
   role, no alternate modes, no accessory mode. Charging continues.
 - Accessories connected before locking follow a user setting; default is
@@ -206,7 +210,7 @@ traffic, reach debug interfaces.
 - The vendor bootloader's own USB stack in fastboot or download mode. NottOS
   cannot harden it. Data stays encrypted and, in that state, keys are not in
   RAM.
-- On Tier 2 and 3 without controller-level disable, a kernel USB bug reachable
+- On Tier B devices without controller-level disable, a kernel USB bug reachable
   before the software block applies.
 
 ### A5 — Thief or forensic tool with a locked device
@@ -226,7 +230,7 @@ the device.
 - Sealed locked state closes USB and network surfaces in AFU.
 - **Auto-reboot** after a configurable locked period returns the device to
   BFU with all keys evicted. Evict-on-lock key classes leave RAM at lock.
-- Unlock attempts are throttled by the secure element (Tier 1), not by the
+- Unlock attempts are throttled by the secure element (Tier A), not by the
   OS. Key derivation combines a memory-hard KDF over the credential with a
   hardware-bound secret, so guessing requires this device's hardware.
 - Metadata encryption on top of file-based encryption: a flash image reveals
@@ -246,9 +250,13 @@ the device.
 - **AFU exploitation before the auto-reboot fires**, through what must stay
   reachable: the touchscreen and lock-screen UI, the charging controller, and
   the baseband if voice is allowed while locked.
-- **A short PIN is only as strong as the throttling hardware.** On Tier 2 and
-  3 without a secure element, a compromised TEE or OS turns a 6-digit PIN
-  into a quick search. Those tiers should require a passphrase.
+- **A short PIN is only as strong as the throttling hardware.** On Tier B
+  devices without a secure element, a compromised TEE or OS turns a 6-digit
+  PIN into a quick search. Those devices should require a passphrase.
+- **Resale after a wipe.** Upstream's factory-reset protection depends on a
+  Google account. NottOS needs its own, bound to the owner's credential or
+  the secure element; until that ADR exists, a thief can wipe and reuse the
+  hardware.
 - Invasive attacks on the TEE or secure element (out of scope, section 5).
 - A thief who knows the PIN. Second factor, a separate private-space
   credential and delays on sensitive setting changes limit the damage; they
@@ -307,7 +315,7 @@ sees and alters all traffic through that radio, transmits at will.
 **Mitigations.**
 
 - Radios confined by the IOMMU so that a chip can reach only its own buffers
-  (confirmed per device on Tier 1).
+  (confirmed per device on Tier A).
 - Host-side drivers and HAL daemons treat radio input as hostile: confined
   domains, seccomp, fuzzing of the message parsers, Rust for new shims.
 - End-to-end protection above the radio: TLS everywhere and optional
@@ -389,7 +397,9 @@ that the documentation must state.
 ## 6. Cross-cutting design: who is allowed to say "unlocked"
 
 Several mitigations depend on the locked state being enforced below the
-application framework. The principle, to be detailed in the locked-state ADR:
+application framework. The principle is stated here; the states and the
+enforcement point for each surface are in
+[architecture.md](architecture.md), section 6:
 
 - **Sealing is fail-closed and easy.** Any of several signals seals the
   device: the framework reporting lock, the display going off past a timeout,
@@ -441,22 +451,23 @@ reopens the device without the owner's credential.
 
 ## 8. What holds on which tier
 
-| Guarantee | Tier 1 | Tier 2 | Tier 3 |
+| Guarantee | Tier A | Tier B, boot verified | Tier B, boot not verified |
 |---|---|---|---|
 | Modified system image does not boot | Yes | Yes | **No** |
 | OS downgrade is refused | Yes | Yes | **No** |
 | Apps and a second device can attest NottOS | Yes | Yes | **No** |
-| Unlock guessing is limited by hardware the OS cannot override | Secure element | TEE (weaker) | TEE, unattested |
-| Memory-corruption bugs trapped by hardware tagging | Yes | No | No |
+| Unlock guessing is limited by hardware the OS cannot override | Secure element | TEE, or secure element if present | TEE, unattested |
+| Memory-corruption bugs trapped by hardware tagging | Where the device has MTE | Rarely | Rarely |
 | USB dead at the controller while locked | Yes | Where the HAL supports it | Kernel only |
 | Radio confined by IOMMU | Audited | Unconfirmed | Unknown |
-| Full kernel hardening profile | Yes | Depends on vendor modules | No |
+| Full kernel hardening profile | Yes | Limited by the vendor's kernel | Limited by the vendor's kernel |
 | App sandbox, permissions, scopes, firewall | Yes | Yes | Yes |
 | Sealed network policy while locked | Yes | Yes | Yes, but a modified OS could remove it |
 | Encryption at rest with hardware-bound keys | Yes | Yes | Yes, but boot chain is not verified |
 
-On Tier 3, everything that depends on the system being unmodified is only as
-strong as physical custody of the device.
+On Tier B devices whose boot is not verified, everything that depends on the
+system being unmodified is only as strong as physical custody of the device.
+Tier C community ports are not tested by the project and carry no claims.
 
 ## 9. Testable invariants
 
@@ -485,6 +496,7 @@ security test suite in later phases. None is implemented; all are UNVERIFIED.
 | INV-18 | Thermal and battery protective shutdowns, and emergency calls, work in every lock state and policy level. |
 | INV-19 | A document-parser process has no network access, no filesystem access beyond its input, and only the syscalls on its allowlist. |
 | INV-20 | Enabling root changes the boot state, shows a persistent indicator, and is reflected in attestation. |
+| INV-21 | Each system app holds exactly the privileges in its published table, and no others. |
 
 ## 10. Limits stated plainly
 

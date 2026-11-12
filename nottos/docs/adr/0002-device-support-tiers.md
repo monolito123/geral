@@ -1,140 +1,150 @@
 # ADR-0002: Device support tiers
 
 - **Status:** Proposed (awaiting owner approval)
-- **Date:** 2026-11-12
+- **Date:** 2026-11-12 (revised the same day to adopt the tier names and
+  definitions in section 13 of the owner's brief)
 - **Decider:** project owner
 
 ## Context
 
-Two requirements conflict directly:
+The brief asks for maximum compatibility and maximum security and
+acknowledges that they pull apart, "because many phones lack a relockable
+bootloader or a secure element". It prescribes honest tiers instead of one
+weak baseline:
 
-- **Widest practical device compatibility** (priority 6).
-- **Full security guarantees** (priority 1): verified boot with NottOS keys on
-  a relocked bootloader, rollback protection, secure-element throttling of
-  unlock attempts, MTE, USB data disabled at the controller, radios isolated
-  by the IOMMU.
+- **Tier A, full guarantees:** relockable bootloader that accepts custom
+  keys, hardware keystore with secure element, IOMMU, timely firmware
+  updates, ideally MTE.
+- **Tier B, reduced guarantees:** supported through generic system images and
+  vendor HALs; some protections unavailable, such as bootloader relocking or
+  a secure element; the user is shown exactly which.
+- **Tier C, community ports:** best effort.
 
-The second set is a property of the *hardware and its firmware*, not of the
-operating system. NottOS cannot add a secure element, enable memory tagging
-the SoC vendor left off, or make a bootloader accept a custom verified-boot
-key.
+This ADR makes those tiers precise enough to test, and records one addition.
 
-What the hardware landscape looks like:
+Facts that shape the tiers:
 
-- The mechanism for a user-set verified-boot key exists in AOSP, but only some
-  vendors implement it correctly `[V:F-19]`.
-- GrapheneOS, which demands roughly the same hardware properties, supports
-  only Pixel 6 and later. Its first non-Pixel device is expected in 2027, and
-  current flagships from that partner "lack MTE, adequate secure element
-  integration and other features" `[V:F-08]`. Meeting the full list is rare
-  even among flagships.
-- Android 17 no longer supports the 5.10 kernel branches after QPR1
-  `[V:F-03]`, which excludes many older low-end devices.
-- The 3 GB / eMMC floor and the full hardware list almost never appear in the
-  same device `[K]`. No such device has been identified; treat the existence
-  of a full-guarantee low-end phone as UNVERIFIED.
-
-If NottOS presents one undifferentiated "supported" list, either the list is
-very short or the security claims are false on most of it.
+- The security properties in question belong to the hardware and its
+  firmware. NottOS cannot add a secure element or make a bootloader accept a
+  custom verified-boot key.
+- The mechanism for a user-set verified-boot key exists in AOSP, but only
+  some vendors implement it correctly `[V:F-19]`.
+- GrapheneOS, with a similar hardware list, supports only Pixel 6 and later;
+  its first non-Pixel device is expected in 2027 `[V:F-08]`. Tier A hardware
+  is rare.
+- Android 17 does not support the 5.10 kernel branches after QPR1
+  `[V:F-03]`, which excludes many older low-end devices from every tier.
+- A phone at the 3 GB / eMMC floor that meets Tier A has not been identified
+  and may not exist `[K]`. UNVERIFIED either way.
 
 ## Options considered
 
-### Option A — strict: only devices that meet every hardware requirement
+### Option 1 — the brief's three tiers, taken literally
 
-One tier. Every NottOS guarantee holds on every supported device. This is
-GrapheneOS's position `[V:F-08]`.
+Tier B then contains two very different kinds of device: one whose
+bootloader is relocked with the NottOS key but which lacks a secure element,
+and one whose bootloader cannot be relocked at all. On the second kind a
+modified system image boots without complaint, hardware attestation reports
+an unlocked device, and nothing protects against tampering by someone with
+brief physical access. A posture list of "missing protections" would show
+this, but as one line among several.
 
-- Gives honest, uniform guarantees and the smallest maintenance load.
-- Gives up priority 6 almost entirely, and gives up the 3 GB floor in
-  practice.
+### Option 2 — the brief's three tiers, with Tier B split into two grades
 
-### Option B — broad: any device that boots the system image
+Same tiers. Inside Tier B, whether the boot chain is verified becomes a
+headline attribute rather than a list item: **B-verified** and
+**B-unverified**. Everything else stays a per-mechanism posture item.
 
-One tier, defined by "it runs". Maximum breadth.
+### Option 3 — strict: Tier A only
 
-- On most devices the bootloader stays unlocked, so verified boot,
-  evil-maid resistance and meaningful attestation are absent. Presenting such
-  a device as NottOS would break priority 1 and mislead users.
-
-### Option C — explicit tiers with per-tier guarantees
-
-Devices are classified by what their hardware can enforce. Each tier has a
-published guarantee set, and the device itself shows its tier and the status
-of each mechanism.
-
-- Keeps breadth without diluting claims.
-- Costs: more test configurations, and the risk that users do not read the
-  tier.
+Uniform guarantees, smallest maintenance load, almost no device breadth. This
+is GrapheneOS's position `[V:F-08]`. Rejected by the brief, which asks for
+tiers.
 
 ## Decision
 
-**Adopt Option C** with three tiers. The names are part of the product so
-that the difference is visible.
+**Adopt Option 2.**
 
-| | **Tier 1 — Full** | **Tier 2 — Verified** | **Tier 3 — Compatibility** |
+| | **Tier A — full guarantees** | **Tier B — reduced guarantees** | **Tier C — community port** |
 |---|---|---|---|
-| Bootloader | Relocked with NottOS key, rollback protection | Relocked with NottOS key, rollback protection | Unlocked, or locked to a key NottOS does not control |
-| Verified-boot fingerprint at boot | Shown in full by the bootloader | Shown, possibly truncated | Not available |
-| Key storage | Secure element (StrongBox) plus TEE | TEE; secure element if present | TEE, not attestable to NottOS |
-| Unlock throttling | Secure element (Weaver) | TEE (Gatekeeper), or Weaver if present | TEE |
-| Memory tagging | MTE, synchronous | Not available | Not available |
-| USB data off while locked | At the port controller and in the kernel | Kernel; controller where the USB HAL supports it | Kernel |
-| Radio isolation by IOMMU | Confirmed by device audit | Unconfirmed or partial | Unknown |
-| Kernel hardening | Full profile (vendor modules rebuilt) | Full where modules can be rebuilt, otherwise interface-neutral only | Interface-neutral only |
-| Hardware attestation of NottOS | Yes (`SelfSigned`, NottOS key) | Yes | No (reports unlocked) |
-| Firmware security patches | Current | Current | May be end-of-life |
-| Product label | NottOS | NottOS, with a posture screen listing what is missing | "NottOS Compatibility build" with a warning at setup and in Settings |
+| Built and tested by | The NottOS project | The NottOS project | The community; the project does not test it |
+| How NottOS is installed | Full device build | Generic system image plus device overlay, on the vendor's HALs and kernel | Whatever the porter achieves |
+| Bootloader | Relocked with the NottOS key, rollback protection | **B-verified:** relocked with the NottOS key. **B-unverified:** unlocked | Unknown |
+| Key storage and unlock throttling | Secure element (StrongBox, Weaver) plus TEE | TEE; secure element if present | Unknown |
+| IOMMU isolation of radios | Confirmed by audit | Unconfirmed or partial | Unknown |
+| Firmware security updates | Timely | May lag or have ended | Unknown |
+| MTE | Used where the device has it ("ideally") | Not expected | Unknown |
+| USB data off while locked | Port controller and kernel | Kernel; controller where the USB HAL supports it | Unknown |
+| Kernel hardening profile | Full (NottOS builds the kernel and vendor modules) | Limited to what the vendor's kernel allows | Unknown |
+| Hardware attestation of NottOS | Yes | B-verified: yes. B-unverified: no | No claim |
+| Listed in the published attestation allowlist | Yes | B-verified only | No |
+| Claims made | Every guarantee in the threat model | Only the guarantees whose mechanisms the posture screen shows as present | None |
 
-Rules that apply to all tiers:
+Rules:
 
-1. **No silent downgrade.** Settings shows a "Security posture" screen with
-   every mechanism from the threat model and its state on this device:
-   enforced by hardware, enforced by software only, or absent.
-2. **Hard exclusions.** A device is not supported in any tier if its boot ROM
-   or a download mode has a public, unpatchable exploit that bypasses verified
-   boot `[K]`, or if emergency calling cannot be made to work.
-3. **Tier 3 never carries the unqualified NottOS name**, never claims
-   protection against physical attackers, and is excluded from the published
-   attestation allowlist.
-4. **A device enters a tier only after a written device audit** against a
-   checklist derived from the threat model. Until audited, a device's tier is
-   UNVERIFIED.
+1. **Posture screen.** On every tier, Settings lists each mechanism from the
+   threat model with its state on this device: enforced by hardware, enforced
+   by software only, or absent. This is the brief's "shows the user exactly
+   which protections are missing".
+2. **B-unverified is announced, not listed.** Setup and the posture screen
+   open with a plain statement that this device cannot verify its own system
+   software and is not protected against physical tampering.
+3. **Hard exclusions, all tiers.** A device does not carry the NottOS name if
+   its boot ROM or a download mode has a public, unpatchable bypass of
+   verified boot `[K]`, or if emergency calling cannot be shown to work.
+4. **Nothing is supported until tested.** A device appears on the support
+   list for a release only with a written device audit and a passing test
+   run on that release. A device that was not re-tested drops off the list
+   for that release.
+5. **Tier checklist tool.** A tool reads a device's properties and reports
+   the tier it can reach and the state of each mechanism. The posture screen
+   and the audit report use the same data.
+6. **Vendor binaries are confined and listed.** Each device publishes a
+   manifest of every closed binary: path, hash, origin, purpose, SELinux
+   domain, whether a syscall filter is enforced, and whether it has network
+   access.
 
-Development targets `[P]`:
+Hardware abstraction is described in
+[../architecture.md](../architecture.md), section 3.
+
+Targets:
 
 | Purpose | Target |
 |---|---|
-| Functional development and CI | Cuttlefish arm64 and x86_64, including a 3 GB RAM configuration |
-| First Tier 1 device | A current Pixel with MTE, a secure element and long remaining support. The exact model is chosen after an audit of what is still buildable without published device trees `[V:F-11]`. |
-| Low-end performance class | To be identified by device audit. A Tier 1 or Tier 2 device at 3–4 GB and eMMC may not exist (see Context). |
+| First "device" | The Cuttlefish emulator, x86_64 and arm64, including a 3 GB RAM configuration. Development needs no hardware. |
+| Architectures | AArch64 first; x86-64 for emulators and tablets; RISC-V kept buildable for NottOS's own code so that a port is not blocked by assumptions |
+| First Tier A hardware | Chosen in Phase 6 after a device audit. A current Pixel is the likely candidate; what can still be built without published device trees `[V:F-11]` must be checked first. UNVERIFIED. |
+| Low-end performance class | To be identified. Probably Tier B (see Context). |
 
 ## Consequences
 
-- **Positive:** security claims stay true per device; breadth is still
-  available to users who accept the trade; app developers get an allowlist
-  that contains only devices with real verified boot.
-- **Negative:** three test matrices; documentation and UI must explain tiers
-  clearly; some users will run Tier 3 and believe they are protected, despite
-  the warnings.
-- **Risk:** Tier 3 damages the project's reputation if its limits are not
-  communicated. Mitigation: distinct name, setup-time warning, posture screen,
-  separate download page.
+- **Positive:** claims stay true per device; breadth remains available;
+  app developers get an allowlist that contains only devices with real
+  verified boot; no device is called supported on faith.
+- **Negative:** several test matrices; re-testing every listed device for
+  every release costs hardware and time, and the list will be short at
+  first.
+- **Risk:** users on B-unverified devices believe they have Tier A
+  protection. Mitigation: rule 2, and exclusion from the attestation
+  allowlist.
+- **Limit of Tier B.** A generic-image install keeps the vendor's kernel and
+  vendor partition as shipped. NottOS cannot update that firmware; when the
+  vendor stops, the device's firmware patch level freezes and the posture
+  screen says so.
 
 ## Owner decision required
 
-Whether Tier 3 exists at all. The recommendation is to define it now but ship
-it only after Tier 1 is solid, as a separately named build. The alternative,
-Option A, is fully consistent with the priority order and is the lower-risk
-choice if device breadth matters less to the owner than this ADR assumes.
+Approve the B-verified / B-unverified split (Option 2), or keep Tier B
+undivided (Option 1).
 
 ## Revisit when
 
-- A hardware partner commits to a device; the tier list may gain a tier above
-  Tier 1 (NottOS controls the bootloader, PQC verified boot, hardware radio
-  switches).
+- A hardware partner commits to a device. A tier above A may be defined:
+  NottOS controls the bootloader, post-quantum verified boot, hardware radio
+  switches.
 - A vendor ships correct custom-key verified boot across a low-end line.
 
 ## Verification
 
-Per-device audit reports and the posture screen's self-test results. None
+Per-device audit reports, tier-checklist output and release test runs. None
 exist yet. UNVERIFIED.
