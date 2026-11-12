@@ -1,0 +1,69 @@
+# Fact check — fast-moving facts
+
+Checked on **2026-11-12**. Each entry records what was checked, where, and how
+much weight it can bear. Design documents cite these as `[V:F-nn]`.
+
+Confidence levels:
+
+- **Primary** — read on the publisher's own page in this check.
+- **Secondary** — reported by press, a project's social account or a search
+  summary; the primary page was not read. Re-check before relying on it for an
+  irreversible decision.
+- **Not verified** — attempted, could not be confirmed. Listed so nobody
+  assumes it was.
+
+## Android platform
+
+| ID | Fact | Confidence | Source |
+|---|---|---|---|
+| F-01 | Android 17 is the current stable release: API level 37, stable on 2026-06-16. AOSP tag `android-17.0.0_r1`, release branch `android17-release`. Android 17 QPR1 (API 37.1) reached Pixels in September 2026. | Release and API level: primary. Tag, branch and QPR1 date: secondary. | [Android Developers Blog](https://android-developers.googleblog.com/2026/06/Android-17.html), [Wikipedia](https://en.wikipedia.org/wiki/Android_17) |
+| F-02 | Android 17 AOSP release notes: stronger default lock-screen rate limiting; the Weaver HAL gains a method to pre-warm the secure element (up to 200 ms lower credential-verification latency); hardware-wrapped storage keys move to Linux kernel ioctls (`wrappedkey` in fstab, on-disk format change, newly launching devices only); devices must enable the `memfd_class` SELinux policy capability; ION is unsupported. | Primary | [source.android.com release notes](https://source.android.com/docs/whatsnew/android-17-release) |
+| F-03 | Supported GKI branches for Android 17 include `android17-6.18` and `android16-6.12` (also `android15-6.6`, `android14-6.1`, `android14-5.15`, `android13-5.15`). The 5.10 branches are not supported on Android 17 QPR1 or later. Listed end dates: 6.12 → 2029-07-01, 6.18 → 2030-07-01. 16 KB GKI builds exist for both. | Secondary (search snapshot of the official pages) | [android-common](https://source.android.com/docs/core/architecture/kernel/android-common), [gki-releases](https://source.android.com/docs/core/architecture/kernel/gki-releases) |
+| F-04 | The Rust Binder driver was merged into mainline Linux 6.18. Removal of the C Binder driver is reported as queued for a later kernel cycle. | Merge: secondary, consistent across reports. Removal: secondary, unconfirmed. | [Phoronix](https://phoronix.com/news/Rust-Binder-For-Linux-6.18) |
+| F-11 | Since the Android 16 source release (June 2025) Google no longer publishes Pixel device trees or driver binaries in AOSP. Cuttlefish (a virtual device) is the AOSP reference target. | Secondary, consistent across reports | [9to5Google](https://9to5google.com/2025/06/12/android-open-source-project-pixel-change/), [Android Authority](https://www.androidauthority.com/google-not-killing-aosp-3566882) |
+| F-12 | In 2026, AOSP source is published in Q2 and Q4 rather than continuously. | Secondary (search summary of the AOSP release notes) | [source.android.com release notes](https://source.android.com/docs/whatsnew/android-17-release) |
+| F-13 | Android Security Bulletins moved to a "risk-based update system": monthly bulletins carry only high-risk issues and most fixes ship quarterly. Whether patch source is still released monthly is **not verified**. | Secondary | [Android Authority](https://www.androidauthority.com/android-risk-based-security-updates-3597466) |
+| F-15 | 16 KB page size: supported by AOSP since Android 15. Google's published initial figures: app launch 3.16 % faster on average under memory pressure (up to 30 % for some apps), 4.56 % lower power draw during app launch, camera 4.48 % (hot) / 6.60 % (cold) faster, boot about 8 % (≈950 ms) faster; "slightly more memory on average" (no figure given). Google Play requires 16 KB support for app updates targeting API 35+ from 2027-02-01. Page size is fixed at kernel build time. | Primary | [developer.android.com](https://developer.android.com/guide/practices/page-sizes), [source.android.com](https://source.android.com/docs/core/architecture/16kb-page-size/16kb) |
+| F-16 | Android Virtualization Framework is ARM64-only and uses pKVM for protected VMs. Qualcomm ships its own Gunyah hypervisor at EL2 on Snapdragon and supports AVF through it. AVF is mandated for devices launching with vendor API 202404 on recent flagship chipsets. | AVF scope: primary. Gunyah and mandate: secondary. | [source.android.com](https://source.android.com/docs/core/virtualization), [Qualcomm developer blog](https://www.qualcomm.com/developer/blog/2024/01/gunyah-hypervisor-software-supporting-protected-vms-android-virtualization-framework), [Android Authority](https://androidauthority.com/android-15-virtual-machine-mandate-3498428) |
+| F-18 | Stock Android 16 "Advanced Protection" includes an inactivity reboot after 72 hours locked and USB protection while the screen is locked. | Primary (Google support page, via search) | [Google support](https://support.google.com/android/answer/16339980?hl=en) |
+| F-19 | AOSP documents a user-settable root of trust for verified boot (`avb_custom_key`), writable only while the bootloader is unlocked. Pixels since Pixel 2 implement it; other OEMs are inconsistent and some implementations are broken. | Mechanism: primary. Device coverage: secondary. | [source.android.com device state](https://source.android.com/docs/security/features/verifiedboot/device-state), [avbroot](https://github.com/chenxiaolong/avbroot) |
+| F-20 | The exact list of AVB signature algorithms (`SHA256_RSA4096` and so on) and the ML-DSA parameter sets added to `libavb`. | **Not verified** (the AVB README could not be read past its table of contents) | — |
+| F-21 | Android compatibility is CDD compliance plus passing CTS. Google Mobile Services is a separate licence (MADA) and is not required to ship Android. | Primary for CDD/CTS, secondary for licensing | [Compatibility overview](https://source.android.com/docs/compatibility/overview) |
+
+## Google Play and integrity
+
+| ID | Fact | Confidence | Source |
+|---|---|---|---|
+| F-05 | Play Integrity device verdicts, quoted from the official page. `MEETS_DEVICE_INTEGRITY`: "The app is running on a genuine and certified Android device. On Android 13 and higher, there is hardware-backed proof that the device bootloader is locked and the loaded Android OS is a certified device manufacturer image." `MEETS_STRONG_INTEGRITY`: on Android 13+ it "requires `MEETS_DEVICE_INTEGRITY` and security updates in the last year for all partitions". `MEETS_BASIC_INTEGRITY`: "The device bootloader can be locked or unlocked, and the boot state can be verified or unverified. The device may not be certified [...] On Android 13 and higher, the `MEETS_BASIC_INTEGRITY` verdict requires only that the attestation root of trust is provided by Google." On Android 13+, the basic and strong labels are returned only if the requesting app was installed or updated by Google Play. | Primary | [developer.android.com verdicts](https://developer.android.com/google/play/integrity/verdicts) |
+| F-10 | GrapheneOS's attestation compatibility guide tells app developers to use hardware key attestation directly: accept `verifiedBootState` of `Verified` or `SelfSigned`, and for `SelfSigned` require `verifiedBootKey` to be in a published, signed allowlist of fingerprints. The guide lists many apps that ban GrapheneOS through the Play Integrity API. | Primary | [GrapheneOS guide](https://grapheneos.org/articles/attestation-compatibility-guide) |
+| F-14 | Android developer verification is being enforced on **certified** devices in Brazil, Indonesia, Singapore and Thailand from 2026-09-30, initially for apps from participating stores; global expansion is planned for 2027. It does not apply to uncertified operating systems. | Secondary | [Android Developers Blog](https://android-developers.googleblog.com/2026/06/android-developer-verification.html) |
+
+## Cryptography standards
+
+| ID | Fact | Confidence | Source |
+|---|---|---|---|
+| F-06 | NIST: FIPS 203 (ML-KEM), FIPS 204 (ML-DSA) and FIPS 205 (SLH-DSA) are final (August 2024). Falcon (to become FN-DSA) and HQC are "selected for ongoing standardization; that process is underway". Secondary sources disagree on whether a FIPS 206 draft has been published; treat FN-DSA and HQC as **not standardised**. Page updated 2026-10-27. | Primary | [NIST CSRC PQC project](https://csrc.nist.gov/projects/post-quantum-cryptography) |
+| F-07 | Google (2026-03-25): in Android 17 the AVB library integrates ML-DSA; Android Keystore exposes ML-DSA-65 and ML-DSA-87; remote attestation begins moving to PQC; the platform verifies PQC signatures over APKs; Play App Signing produces hybrid classical + PQC signature blocks. The post does **not** say which parameter set AVB uses, whether AVB signatures are hybrid, or whether bootloaders of existing devices will be updated. | Primary | [Google security blog](https://blog.google/security/security-for-the-quantum-era-implementing-post-quantum-cryptography-in-android/) |
+
+## Reference project: GrapheneOS
+
+| ID | Fact | Confidence | Source |
+|---|---|---|---|
+| F-08 | Supported devices are Pixel 6 through Pixel 10a families. Requirements for future devices include: alternate-OS verified boot with rollback protection, StrongBox, Weaver throttling, insider-attack resistance, hardware memory tagging, PAC/BTI, isolated radios/GPU/SSD/codec, inline encryption with wrapped keys, USB disable at the controller level, GKI 6.12 or 6.18, monthly firmware patches and at least 5 years of support. A partnership with Motorola was announced; the Motorola Signature 27 is to be the first non-Pixel device, expected in 2027. 2026 Motorola flagships "lack MTE, adequate secure element integration and other features". | Requirements and device list: primary. Motorola: secondary (project's social account and press). | [GrapheneOS FAQ](https://grapheneos.org/faq), [Android Authority](https://www.androidauthority.com/grapheneos-motorola-signature-27-support-3714885/) |
+| F-09 | GrapheneOS features relevant as a parity baseline: USB-C port control implemented "at both the hardware level via configuring the USB controller and also at the OS level in the kernel", default "Charging-only when locked"; auto-reboot default 18 hours (range 10 minutes to 72 hours); hardened_malloc; MTE; exec-based spawning that "adds somewhere in the ballpark of 200ms to app spawning time on the flagship devices" and is "only very noticeable on lower-end devices", with higher initial memory use (no figure published); ART JIT disabled in favour of AOT; Network and Sensors permissions; Storage and Contact Scopes; duress PIN; PIN scrambling; two-factor fingerprint unlock; sandboxed Google Play. | Primary | [GrapheneOS features](https://grapheneos.org/features), [GrapheneOS usage](https://grapheneos.org/usage) |
+
+## This development environment
+
+Observed in this session, relevant to what can honestly be claimed as built or
+tested here:
+
+| Item | Value |
+|---|---|
+| Rust | `rustc 1.97.0`, host target `x86_64-unknown-linux-gnu` only |
+| C toolchain | clang 18.1.3, gcc 13.3.0; no AArch64 cross compiler |
+| Emulators | none installed (no QEMU, no Cuttlefish) |
+| Resources | 4 vCPU, 15 GiB RAM, about 30 GB free disk |
+
+An AOSP build needs far more disk and memory than this (hundreds of GB of
+disk, tens of GB of RAM `[K]`). AOSP cannot be built or booted in this
+environment. Host-side Rust components can be built and unit-tested here.
