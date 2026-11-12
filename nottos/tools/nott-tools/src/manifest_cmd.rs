@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `manifest create` and `manifest verify`.
 
 use crate::args::Args;

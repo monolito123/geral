@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
 # Stage 2 of the minimal Linux test target. It runs from the verified system
 # image, mounts storage and then runs the test named on the kernel command
 # line (nott.test=NAME), or starts a shell when none is named.

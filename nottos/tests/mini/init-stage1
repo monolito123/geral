@@ -1,4 +1,5 @@
 #!/bin/busybox sh
+# SPDX-License-Identifier: Apache-2.0
 # Stage 1 of the minimal Linux test target. It runs from the initramfs, which
 # stands in for a bootloader-verified boot image: it carries the dm-verity
 # root hash of the system image and refuses to continue if the system image

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Small file helpers shared by the commands.
 
 use std::fs;

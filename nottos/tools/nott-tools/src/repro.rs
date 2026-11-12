@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `repro compare`: are two build output trees identical?
 //!
 //! Used by the reproducibility check

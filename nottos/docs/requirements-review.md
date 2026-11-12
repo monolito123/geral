@@ -1,6 +1,6 @@
 # Requirements review — questions, conflicts and limits
 
-- **Version:** 0.2 (Phase 0, awaiting owner approval)
+- **Version:** 0.3 (Phase 0 approved; decisions recorded)
 - **Date:** 2026-11-12
 - **Change from 0.1:** the complete brief (sections 9 to 15) was received.
   Tiers now follow section 13. Items C-18 to C-24 were added from sections
@@ -18,6 +18,11 @@ Evidence tags are explained in the [README](../README.md).
 
 Each has a recommendation, which is also the default if there is no answer.
 
+**Decided on 2026-11-12.** The owner approved Phase 0 and delegated these
+decisions ("Faça tudo da maneira que achar melhor"). The recommended option
+is adopted for every question. Three of them need something only the owner
+can provide; they are marked **owner action**.
+
 ### Q1 — Should the main profile's keys be evicted at every lock?
 
 **Why it matters.** It decides the storage key hierarchy (C-05).
@@ -31,6 +36,9 @@ Each has a recommendation, which is also the default if there is no answer.
   music and background sync stop, and many apps misbehave, because Android
   apps assume their files stay readable after the first unlock.
 
+**Decision.** Option A: graded eviction. Detailed in the storage key
+hierarchy ADR (Phase 2).
+
 ### Q2 — Under Sealed, do Bluetooth audio and hearing devices stay connected?
 
 **Why it matters.** It decides where Bluetooth is enforced (C-06). A full
@@ -42,6 +50,9 @@ larger and weaker enforcement point.
   clearly labelled setting keeps audio and hearing devices connected, and is
   offered at setup when a hearing aid is paired.
 - **Option B.** Keep audio and hearing devices connected by default.
+
+**Decision.** Option A: disconnect at lock by default, with a setting to
+keep audio and hearing devices that is offered when a hearing aid is paired.
 
 ### Q3 — Who operates the lost-device service, and how does it reach a sealed phone?
 
@@ -56,6 +67,10 @@ hole in the seal (C-06).
 - **Option B.** No server. Commands arrive by signed SMS. Needs cellular
   voice and SMS allowed while locked, and exposes the baseband.
 - **Option C.** No lost-device function in the first release.
+
+**Decision.** Option A: owner-configurable relay, owner-signed commands.
+Protocol in the lost-device ADR (Phase 5). Running the default relay is
+project infrastructure that does not exist yet.
 
 ### Q4 — How faithful must Nott Reader be for office documents?
 
@@ -73,6 +88,9 @@ image size (C-20).
   share of the image budget.
 - **Option C.** Readable rendering only; no high-fidelity path.
 
+**Decision.** Option A: readable rendering built in, optional
+high-fidelity pack. Detailed in the Nott Reader ADR (Phase 5).
+
 ### Q5 — How many independent people will hold release keys?
 
 **Why it matters.** It decides the key ceremony and whether one compromised
@@ -83,6 +101,10 @@ person or machine can sign a malicious release (threat model, A8).
 - **Option B.** A single holder (the owner). Simpler, but theft or coercion
   of one person compromises every device. The transparency log and
   reproducible builds would then be the only check.
+
+**Decision.** Option A: three holders, two of three. **Owner action:** name
+the holders before the key ceremony (Phase 7). Until then only test keys
+exist and nothing is signed for release.
 
 ### Q6 — Will the project get a build host and its own repositories?
 
@@ -98,6 +120,12 @@ repositories, and this session can only write to an existing general one.
   host-side Rust components with tests, and every emulator-based acceptance
   criterion stays UNVERIFIED.
 
+**Decision.** Option A is the goal: a build host and a dedicated
+organisation (ADR-0004). **Owner action:** provide both. Until they exist,
+work proceeds as in Option B: host-side components, plus a minimal Linux
+test target in QEMU for boot-level checks (ADR-0007). Every acceptance
+criterion that needs the emulator stays UNVERIFIED.
+
 ### Q7 — Is a hardware-partner track started now, and may hardware work begin before Phase 6?
 
 **Why it matters.** It decides how late security patches arrive (C-14),
@@ -110,16 +138,20 @@ designs stay untested (roadmap, risks).
 - **Option B.** Keep the phase order strictly; first hardware contact in
   Phase 6; no partner track.
 
+**Decision.** Option A: partner track in parallel and an early hardware
+spike. **Owner action:** partner outreach, and a candidate Tier A device for
+the spike.
+
 ## Part 2 — Conflicts and limits
 
 | ID | Topic | Kind | Status |
 |---|---|---|---|
-| C-01 | Device breadth vs. full security guarantees | Conflict | Resolved by section 13; one addition in ADR-0002 |
+| C-01 | Device breadth vs. full security guarantees | Conflict | Resolved by section 13 and ADR-0002 |
 | C-02 | "Best at all four goals" vs. the cost of hardening | Conflict | Assumption |
 | C-03 | Play Integrity verdicts | Not achievable by an OS | Informational |
 | C-04 | Post-quantum signatures in the boot chain | Limited by hardware | Assumption |
-| C-05 | Evicting keys on every lock | Conflict with the app model | **Q1** |
-| C-06 | Sealed vs. Bluetooth devices, locate, emergency | Conflict | **Q2, Q3** |
+| C-05 | Evicting keys on every lock | Conflict with the app model | Decided (Q1) |
+| C-06 | Sealed vs. Bluetooth devices, locate, emergency | Conflict | Decided (Q2, Q3) |
 | C-07 | "Nothing outside user data is writable" | Impossible as written | Assumption |
 | C-08 | Run-from-RAM on the 3 GB floor | Conflict | Assumption |
 | C-09 | Enforcement in USB and radio firmware | Limited by hardware | Informational |
@@ -127,13 +159,13 @@ designs stay untested (roadmap, risks).
 | C-11 | Kernel hardening vs. prebuilt vendor modules | Limited by hardware | Assumption |
 | C-12 | Syscall filters for vendor HALs | Costly per device | Assumption |
 | C-13 | Hand-written assembly for cryptography | Unsafe as written | Assumption |
-| C-14 | Monthly, prompt security patches without partner access | External dependency | **Q7** |
-| C-15 | Building and testing an OS in this environment | Tooling limit | **Q6** |
+| C-14 | Monthly, prompt security patches without partner access | External dependency | Decided (Q7); owner action |
+| C-15 | Building and testing an OS in this environment | Tooling limit | Decided (Q6); owner action |
 | C-16 | Integrity folder "marked immutable" | Wording | Assumption |
 | C-17 | Sections missing from the brief | Input | Resolved |
 | C-18 | System apps "sandboxed like any third-party app" | Impossible for some apps | Assumption |
 | C-19 | Only three default network connections | Too few in practice | Assumption |
-| C-20 | Nott Reader: breadth, fidelity, size and licences | Conflict | **Q4** |
+| C-20 | Nott Reader: breadth, fidelity, size and licences | Conflict | Decided (Q4) |
 | C-21 | Per-file keys vs. the inline encryption engine | Conflict | Assumption |
 | C-22 | Tests that "prove" the locked-state policy | Wording; hardware arrives late | Assumption |
 | C-23 | eSIM, VoLTE and VoWiFi need closed components | External dependency | Assumption |
@@ -354,10 +386,11 @@ level and age shown in Verify system; partner track. See **Q7**.
 no AArch64 toolchain ([fact-check.md](fact-check.md)). AOSP needs at least
 64 GB RAM and 400 GB disk `[V:F-22]`.
 
-**Possible here.** Design documents; host-side Rust components with unit
-tests and fuzzing.
+**Possible here.** Design documents; host-side Rust components with tests;
+a minimal Linux system in QEMU, which boots in about five seconds in pure
+emulation (ADR-0007).
 
-**Not possible here.** Building system images, booting the emulator,
+**Not possible here.** Building AOSP system images, booting Cuttlefish,
 running CTS, measuring any budget, anything on a real device. See **Q6**.
 
 ### C-16 — Integrity folder "marked immutable"

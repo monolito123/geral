@@ -18,13 +18,30 @@ stays within regulatory limits.
 
 ## Status
 
-**Phase 0 — architecture. Design documents only.**
+| Phase | State |
+|---|---|
+| 0 — Architecture | Approved by the owner on 2026-11-12 |
+| 1 — Build system and emulator target | **Host side done; emulator side blocked.** Host tools, CI and a minimal Linux test target exist and are tested. No Android system image has been built: that needs an AOSP build host the project does not have. None of the Phase 1 acceptance criteria is met yet. See [docs/reports/phase-1.md](docs/reports/phase-1.md). |
+| 2 to 7 | Not started |
 
-- No NottOS code exists yet.
-- Nothing has been compiled, booted, tested or measured. Every performance
-  number in this repository is a *proposed target*, not a result.
-- Phase 0 is complete and awaiting owner approval. No later phase has
-  started.
+Every performance number in this repository is still a *proposed target*,
+not a measurement.
+
+## Building and testing
+
+Needs a Linux host with `rustup`, `shellcheck` and, for the boot tests, the
+packages listed in [tests/mini/README.md](tests/mini/README.md).
+
+```sh
+./nott check       # formatting, lints, tests, shell lint, licence headers
+./nott build host  # host tools into out/host/
+./nott repro       # build twice under different paths; outputs must match
+./nott sbom        # SPDX bill of materials for the host tools
+./nott mini test   # boot tests on the minimal Linux test target (QEMU)
+```
+
+The minimal Linux test target is a test vehicle. It is not NottOS
+([ADR-0007](docs/adr/0007-minimal-linux-test-target.md)).
 
 ## Documents
 

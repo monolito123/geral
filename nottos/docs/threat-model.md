@@ -1,6 +1,6 @@
 # NottOS threat model
 
-- **Version:** 0.2 (Phase 0, awaiting owner approval; tiers renamed to the
+- **Version:** 0.2 (Phase 0, approved by the owner on 2026-11-12; tiers renamed to the
   brief's A, B and C)
 - **Date:** 2026-11-12
 - **Depends on:** [ADR-0001](adr/0001-base-architecture.md) (hardened AOSP on

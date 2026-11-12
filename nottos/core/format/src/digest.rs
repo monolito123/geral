@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! SHA-256 digests in canonical lower-case hexadecimal form.
 //!
 //! The hash itself comes from the `sha2` crate. Nothing here implements a

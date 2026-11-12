@@ -1,6 +1,8 @@
 # ADR-0002: Device support tiers
 
-- **Status:** Proposed (awaiting owner approval)
+- **Status:** Accepted (2026-11-12; decided under the owner's delegation,
+  see [0001](0001-base-architecture.md)). Tier B is split into boot-verified
+  and boot-unverified grades.
 - **Date:** 2026-11-12 (revised the same day to adopt the tier names and
   definitions in section 13 of the owner's brief)
 - **Decider:** project owner
@@ -74,7 +76,7 @@ tiers.
 | IOMMU isolation of radios | Confirmed by audit | Unconfirmed or partial | Unknown |
 | Firmware security updates | Timely | May lag or have ended | Unknown |
 | MTE | Used where the device has it ("ideally") | Not expected | Unknown |
-| USB data off while locked | Port controller and kernel | Kernel; controller where the USB HAL supports it | Unknown |
+| USB data off while locked | Kernel, and the port controller where the device has the control (expected on Tier A) | Kernel; controller where the USB HAL supports it | Unknown |
 | Kernel hardening profile | Full (NottOS builds the kernel and vendor modules) | Limited to what the vendor's kernel allows | Unknown |
 | Hardware attestation of NottOS | Yes | B-verified: yes. B-unverified: no | No claim |
 | Listed in the published attestation allowlist | Yes | B-verified only | No |
@@ -131,11 +133,6 @@ Targets:
   vendor partition as shipped. NottOS cannot update that firmware; when the
   vendor stops, the device's firmware patch level freezes and the posture
   screen says so.
-
-## Owner decision required
-
-Approve the B-verified / B-unverified split (Option 2), or keep Tier B
-undivided (Option 1).
 
 ## Revisit when
 

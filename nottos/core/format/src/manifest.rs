@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The NottOS build manifest.
 //!
 //! The manifest states what a release consists of: version, build ID,

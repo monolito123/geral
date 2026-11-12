@@ -32,6 +32,7 @@ Confidence levels:
 | F-22 | Building AOSP (`android17-release`) requires a 64-bit x86 host with "a minimum of 64 GB of RAM" and "at least 400 GB of free disk space". | Primary | [AOSP requirements](https://source.android.com/docs/setup/start/requirements) |
 | F-23 | File-based encryption. Storage classes are device-encrypted (available at boot) and credential-encrypted (after first unlock). The `inlinecrypt_optimized` mode "derives just one file contents encryption key per CE or DE key, rather than one per file". Contents: AES-256-XTS, or Adiantum "on devices without any form of AES acceleration"; AES-HCTR2 preferred for file names since Android 14. The credential is stretched with scrypt "targeting a time of about 25 ms and a memory usage of about 2 MiB"; Weaver (secure element or TEE) or Gatekeeper enforces rate limiting. Keys not bound to a credential are wrapped by a rollback-resistant Keystore key. KeyMint must be bound to the verified-boot root of trust. | Primary | [File-based encryption](https://source.android.com/docs/security/features/encryption/file-based) |
 | F-25 | Cuttlefish needs KVM on the host. Documented targets are `aosp_cf_x86_64_phone` and `aosp_cf_arm64_only_phone`. A RISC-V target, virtual Wi-Fi, the modem simulator and virtual USB were **not verified**. | KVM and targets: primary (via search) | [Cuttlefish get started](https://source.android.com/docs/devices/cuttlefish/get-started) |
+| F-28 | 64-bit only. Android 12 was the first release to support 64-bit-only builds; Pixel 7 and 7 Pro were the first 64-bit-only phones, with up to 150 MB of RAM saved. All Arm Cortex-A cores since the 2023 generation are 64-bit only. Google Play has required 64-bit app versions since August 2019 and stopped serving 32-bit-only apps to 64-bit-capable devices in August 2021. | Primary (Google, Arm), via search | [Android Developers Blog](https://android-developers.googleblog.com/2022/10/64-bit-only-devices.html), [Arm Newsroom](https://newsroom.arm.com/blog/64-bit) |
 | F-26 | AOSP expects the eSIM profile manager to be supplied as a system app. OpenEUICC is an open-source one meant to run as a privileged system app. Its licence is reported as GPL-3.0 (earlier GPL-2.0); check the repository before use. | Secondary | [eSIM overview](https://source.android.com/docs/core/connect/esim-overview), [OpenEUICC](https://www.github.com/ZVNexus/OpenEUICC) |
 
 ## Google Play and integrity
@@ -67,9 +68,12 @@ tested here:
 |---|---|
 | Rust | `rustc 1.97.0`, host target `x86_64-unknown-linux-gnu` only |
 | C toolchain | clang 18.1.3, gcc 13.3.0; no AArch64 cross compiler |
-| Emulators | none installed (no QEMU, no Cuttlefish) |
 | Resources | 4 vCPU, 15 GiB RAM, about 30 GB free disk |
+| Hardware virtualisation | None (`/dev/kvm` absent) |
+| Emulator | QEMU 8.2.2 installs from the distribution and runs in pure emulation; a distribution kernel (7.0.0-43-generic) with a small initramfs reaches a shell in about five seconds |
+| Network | crates.io and the distribution's package archive are reachable; public Git repositories can be read |
 
-An AOSP build needs far more disk and memory than this (hundreds of GB of
-disk, tens of GB of RAM `[K]`). AOSP cannot be built or booted in this
-environment. Host-side Rust components can be built and unit-tested here.
+Building AOSP needs at least 64 GB of RAM and 400 GB of disk (F-22), and
+Cuttlefish needs hardware virtualisation (F-25). Neither is available here,
+so AOSP cannot be built or booted in this environment. Host-side Rust
+components and a minimal Linux system in QEMU can.

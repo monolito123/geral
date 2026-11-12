@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
 # Boots the minimal Linux test target in QEMU and checks what it does.
 # See README.md in this directory.
 #

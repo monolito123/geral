@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
 # NottOS build entry point: one command for every build and check.
 # See docs/repository-layout.md and docs/adr/0006-build-reproducibility.md.
 set -eu
@@ -65,6 +66,21 @@ cmd_build_host() {
     echo "nott: built $OUT/host/nott-tools"
 }
 
+# Every source file names its licence near the top
+# (docs/adr/0005-licensing.md).
+check_licence_headers() {
+    missing=$(
+        {
+            find core tools -name '*.rs'
+            echo nott
+            find tests -name '*.sh' -o -name 'init-stage*'
+        } | while read -r file; do
+            head -n 3 "$file" | grep -q 'SPDX-License-Identifier: ' || echo "$file"
+        done
+    )
+    [ -z "$missing" ] || die "no SPDX-License-Identifier in: $(echo "$missing" | tr '\n' ' ')"
+}
+
 cmd_check() {
     command -v shellcheck >/dev/null || die "shellcheck is required for 'nott check'"
     cd "$ROOT"
@@ -73,6 +89,7 @@ cmd_check() {
     cargo test --workspace --locked
     shellcheck nott tests/mini/*.sh
     shellcheck --shell=sh tests/mini/init-stage1 tests/mini/init-stage2
+    check_licence_headers
     echo "nott: check passed"
 }
 
@@ -107,6 +124,8 @@ cmd_repro() {
         cp "$copy/target/release/nott-tools" "$copy/artifacts/"
     done
     "$first/artifacts/nott-tools" repro compare "$first/artifacts" "$second/artifacts"
+    # Printed so that runs on different machines can be compared by eye.
+    echo "nott: sha256 $(sha256sum <"$first/artifacts/nott-tools" | cut -d' ' -f1)  nott-tools"
 }
 
 cmd_sbom() {

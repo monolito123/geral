@@ -1,6 +1,6 @@
 # Roadmap and acceptance criteria
 
-- **Version:** 0.1 (Phase 0 draft, awaiting owner approval)
+- **Version:** 0.1 (Phase 0, approved by the owner on 2026-11-12)
 - **Date:** 2026-11-12
 
 The phases and their order are the owner's (brief, section 15). This document
@@ -25,11 +25,11 @@ The phase then stops until the owner approves.
 
 | Need | For | Status |
 |---|---|---|
-| Build host: 64-bit x86, at least 64 GB RAM and 400 GB free disk `[V:F-22]`, hardware virtualisation for the emulator `[V:F-25]` | Phase 1 onward | **Missing.** The current environment has 15 GB RAM and 30 GB disk. |
-| A place for many repositories (organisation) | Phase 1 onward | Missing; owner decision (Q6) |
+| Build host: 64-bit x86, at least 64 GB RAM and 400 GB free disk `[V:F-22]`, hardware virtualisation for the emulator `[V:F-25]` | Phase 1 onward | **Missing.** The current environment has 15 GB RAM, 30 GB disk and no hardware virtualisation. Owner action. |
+| A place for many repositories (organisation) | Phase 1 onward | Missing. Decided in ADR-0004; creating it is an owner action. |
 | Larger build capacity for the browser engine | Phase 5 | Missing |
 | Real devices: one Tier A, one per performance class; USB protocol analyser; power monitor | Phase 6 | Missing |
-| Offline signing hardware and key holders | Phase 7 (test keys until then) | Missing; owner decision (Q5) |
+| Offline signing hardware and three key holders | Phase 7 (test keys until then) | Missing. Two-of-three decided (Q5); naming the holders is an owner action. |
 | Independent auditor | Phase 7 | Not engaged |
 
 Without the build host, Phases 1 to 5 can only deliver host-side Rust
@@ -73,7 +73,7 @@ encrypted storage.
 |---|---|---|
 | 1.1 | A clean checkout builds with one command on the documented host | CI log of a clean build |
 | 1.2 | The emulator boots to a shell; verified-boot state is locked with the NottOS key; verity is enforcing | Boot test reading the boot properties |
-| 1.3 | A system image with one flipped byte does not reach a shell | Negative boot test |
+| 1.3 | With one bit flipped in a block that boot reads, the system does not reach a shell. With one bit flipped in any other block, reading it fails and the tampered data is never returned. | Two negative boot tests |
 | 1.4 | A system image signed with a different key does not boot | Negative boot test |
 | 1.5 | User data is encrypted: a known string written to a file, and the file's name, are absent from the raw storage image after shutdown | Search of the raw image |
 | 1.6 | Every mounted filesystem is verity-protected read-only, tmpfs or encrypted, apart from an enumerated exception list (INV-02) | Mount-table check |
@@ -84,6 +84,13 @@ encrypted storage.
 **Still UNVERIFIED after this phase.** Everything hardware-rooted: the
 emulator's bootloader and key storage are software. Reproducibility across
 different build machines, unless a second host is available.
+
+**Status (2026-11-12).** The host-side part is done and the checks have
+scaled-down analogues on the minimal Linux test target
+([ADR-0007](adr/0007-minimal-linux-test-target.md)). Criteria 1.1 to 1.9
+are all still open, because every one of them is about the Cuttlefish
+target and needs the AOSP build host. See
+[reports/phase-1.md](reports/phase-1.md).
 
 ## Phase 2 — Core security
 

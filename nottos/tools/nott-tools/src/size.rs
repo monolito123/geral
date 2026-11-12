@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `size check`: the system image size budget
 //! (`docs/performance-budgets.md`, section 2.5).
 

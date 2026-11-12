@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `tier check`: which tier can a device reach, and what is its posture?
 //!
 //! First version of the tier checklist tool (ADR-0002, rule 5). It reads a

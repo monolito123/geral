@@ -1,6 +1,8 @@
 # ADR-0001: Base architecture — hardened AOSP derivative on GKI Linux
 
-- **Status:** Proposed (awaiting owner approval)
+- **Status:** Accepted (2026-11-12). The owner approved Phase 0 and
+  delegated the open decisions with the words "Faça tudo da maneira que
+  achar melhor"; the recommended option was adopted.
 - **Date:** 2026-11-12
 - **Decider:** project owner
 

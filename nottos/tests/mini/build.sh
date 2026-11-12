@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
 # Builds the minimal Linux test target. See README.md in this directory.
 #
 # usage: build.sh OUT_DIR

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Device capability descriptor and tier assessment.
 //!
 //! Implements `docs/adr/0002-device-support-tiers.md`. A device directory

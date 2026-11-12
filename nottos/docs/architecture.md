@@ -1,6 +1,6 @@
 # NottOS high-level architecture
 
-- **Version:** 0.1 (Phase 0 draft, awaiting owner approval)
+- **Version:** 0.1 (Phase 0, approved by the owner on 2026-11-12)
 - **Date:** 2026-11-12
 - **Depends on:** [ADR-0001](adr/0001-base-architecture.md),
   [ADR-0002](adr/0002-device-support-tiers.md),

@@ -1,6 +1,6 @@
 # NottOS performance and memory budgets
 
-- **Version:** 0.1 (Phase 0 draft, awaiting owner approval)
+- **Version:** 0.1 (Phase 0, approved by the owner on 2026-11-12)
 - **Date:** 2026-11-12
 
 **Every number in this document is a proposed target `[P]`.** Nothing has

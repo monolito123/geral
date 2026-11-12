@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Versioned on-disk formats for NottOS.
 //!
 //! Every format in this crate starts with a magic string and a format

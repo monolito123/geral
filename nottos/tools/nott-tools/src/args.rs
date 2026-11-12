@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Command-line parsing: `--name value` options and positional arguments.
 //!
 //! Deliberately small. Options always take a value, may repeat, and must be

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! End-to-end tests of the `nott-tools` binary: real files, real exit codes.
 
 use std::fs;

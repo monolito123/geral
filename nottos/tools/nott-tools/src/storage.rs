@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `storage check`: invariant INV-02 of the threat model.
 //!
 //! Every mounted filesystem must be one of: verified read-only, volatile

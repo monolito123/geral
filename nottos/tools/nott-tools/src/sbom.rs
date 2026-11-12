@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `sbom`: software bill of materials for the host tools, in SPDX 2.3 JSON.
 //!
 //! The input is the output of `cargo metadata --format-version 1 --locked`

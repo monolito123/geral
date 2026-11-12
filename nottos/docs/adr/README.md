@@ -7,8 +7,13 @@ decision, consequences.
 
 | ADR | Title | Status |
 |---|---|---|
-| [0001](0001-base-architecture.md) | Base architecture: hardened AOSP derivative on GKI Linux | Proposed |
-| [0002](0002-device-support-tiers.md) | Device support tiers | Proposed |
+| [0001](0001-base-architecture.md) | Base architecture: hardened AOSP derivative on GKI Linux | Accepted |
+| [0002](0002-device-support-tiers.md) | Device support tiers | Accepted |
+| [0003](0003-64-bit-only.md) | 64-bit only; no 32-bit app support | Accepted |
+| [0004](0004-source-management.md) | Source management | Accepted |
+| [0005](0005-licensing.md) | Licensing of NottOS code | Accepted |
+| [0006](0006-build-reproducibility.md) | Build reproducibility | Accepted |
+| [0007](0007-minimal-linux-test-target.md) | Minimal Linux test target | Accepted |
 
 ## Planned ADRs
 
@@ -17,10 +22,6 @@ their absence as a decision. Numbers are assigned when the ADR is written.
 
 | Topic | Phase | Why it needs its own ADR |
 |---|---|---|
-| 32-bit app support | 1 | Owner requirement; depends on SoC support for AArch32 and fixes the build targets |
-| Source management | 1 | Forked repositories or patch series for changes to AOSP |
-| Licensing of NottOS code | 1 | Owner requirement: choose and justify |
-| Build reproducibility | 1 | How bit-identical builds are achieved and checked |
 | Cryptographic suite and formats | 2 | Hybrid constructions, algorithm identifiers, crypto-agility |
 | Storage key hierarchy | 2 | Key classes, evict-on-lock, KDF parameters, inline engine vs. per-file keys |
 | Update system | 2 | Signing, delta format, anti-rollback, transparency log |

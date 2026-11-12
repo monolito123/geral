@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! NottOS host tools.
 //!
 //! One binary with a subcommand per check, so that the build entry point,

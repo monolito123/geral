@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! NottOS policy models.
 //!
 //! This crate holds decisions that must be the same wherever they are made:
