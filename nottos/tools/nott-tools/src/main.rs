@@ -41,8 +41,8 @@ usage: nott-tools <command>
                   [--public-key FILE --signature FILE]
   repro compare DIR_A DIR_B
   size check MANIFEST --budget-bytes N --images NAME[,NAME...]
-  sbom --metadata FILE --lock FILE --created YYYY-MM-DDThh:mm:ssZ
-       --name NAME --out FILE
+  sbom --metadata FILE --lock FILE --packages FILE
+       --created YYYY-MM-DDThh:mm:ssZ --name NAME --out FILE
   tier check DESCRIPTOR
   storage check REPORT [--exceptions FILE]
 

@@ -2,10 +2,12 @@
 
 //! `sbom`: software bill of materials for the host tools, in SPDX 2.3 JSON.
 //!
-//! The input is the output of `cargo metadata --format-version 1 --locked`
-//! and the workspace's `Cargo.lock`. Only packages that end up in, or help
-//! build, the shipped tools are listed: development-only dependencies are
-//! left out. The output is deterministic for the same inputs.
+//! The inputs are the output of `cargo metadata --format-version 1 --locked`,
+//! the workspace's `Cargo.lock`, and the list of packages `cargo tree`
+//! reports for normal and build dependencies on the build platform. Only
+//! packages on that list are written: Cargo's metadata also names packages
+//! that exist for tests or for other platforms, and those are not part of
+//! what ships. The output is deterministic for the same inputs.
 
 use crate::args::Args;
 use crate::util::{read_text, write_text};
@@ -19,16 +21,24 @@ const MAX_INPUT_BYTES: u64 = 64 * 1024 * 1024;
 const CRATES_IO: &str = "registry+https://github.com/rust-lang/crates.io-index";
 
 pub(crate) fn run(raw: &[&str]) -> CommandResult {
-    let args = Args::parse(raw, &["metadata", "lock", "created", "name", "out"])?;
+    let args = Args::parse(
+        raw,
+        &["metadata", "lock", "packages", "created", "name", "out"],
+    )?;
     let [] = args.positionals()?;
     let metadata_path = args.required("metadata")?;
     let metadata: Value =
         serde_json::from_str(&read_text(Path::new(metadata_path), MAX_INPUT_BYTES)?)
             .map_err(|error| format!("{metadata_path}: {error}"))?;
     let lock = read_text(Path::new(args.required("lock")?), MAX_INPUT_BYTES)?;
+    let shipped = parse_package_list(&read_text(
+        Path::new(args.required("packages")?),
+        MAX_INPUT_BYTES,
+    )?)?;
     let document = build(
         &metadata,
         &lock,
+        &shipped,
         args.required("created")?,
         args.required("name")?,
     )?;
@@ -48,7 +58,32 @@ struct Package<'a> {
     source: Option<&'a str>,
 }
 
-fn build(metadata: &Value, lock: &str, created: &str, name: &str) -> Result<Value, String> {
+/// Parses lines of the form `name version`.
+fn parse_package_list(text: &str) -> Result<BTreeSet<(String, String)>, String> {
+    let mut packages = BTreeSet::new();
+    for (index, line) in text.lines().enumerate() {
+        let fields: Vec<&str> = line.split(' ').collect();
+        let &[name, version] = fields.as_slice() else {
+            return Err(format!(
+                "package list, line {}: expected `name version`",
+                index + 1
+            ));
+        };
+        packages.insert((name.to_owned(), version.to_owned()));
+    }
+    if packages.is_empty() {
+        return Err("package list is empty".to_owned());
+    }
+    Ok(packages)
+}
+
+fn build(
+    metadata: &Value,
+    lock: &str,
+    shipped: &BTreeSet<(String, String)>,
+    created: &str,
+    name: &str,
+) -> Result<Value, String> {
     if !is_timestamp(created) {
         return Err("--created must look like 2026-11-12T00:00:00Z".to_owned());
     }
@@ -95,11 +130,30 @@ fn build(metadata: &Value, lock: &str, created: &str, name: &str) -> Result<Valu
                 .ok_or("cargo metadata: bad workspace member")?,
         );
     }
+    let is_shipped = |id: &str| {
+        packages.get(id).is_some_and(|package| {
+            shipped.contains(&(package.name.to_owned(), package.version.to_owned()))
+        })
+    };
     let mut reachable = BTreeSet::new();
     let mut pending = members.clone();
     while let Some(id) = pending.pop() {
-        if reachable.insert(id) {
+        if is_shipped(id) && reachable.insert(id) {
             pending.extend(edges.get(id).into_iter().flatten().copied());
+        }
+    }
+    // The two views of the dependency graph must agree: everything Cargo
+    // says is built must have been found in the metadata.
+    for (name, version) in shipped {
+        let found = reachable.iter().any(|id| {
+            packages
+                .get(id)
+                .is_some_and(|package| package.name == name && package.version == version)
+        });
+        if !found {
+            return Err(format!(
+                "package list names {name} {version}, which the metadata graph does not reach"
+            ));
         }
     }
 
@@ -171,11 +225,9 @@ fn build(metadata: &Value, lock: &str, created: &str, name: &str) -> Result<Valu
     }
     for (id, identifier) in &identifiers {
         for target in edges.get(id).into_iter().flatten() {
-            relationships.insert((
-                identifier.as_str(),
-                "DEPENDS_ON",
-                identifiers[target].as_str(),
-            ));
+            if let Some(target) = identifiers.get(target) {
+                relationships.insert((identifier.as_str(), "DEPENDS_ON", target.as_str()));
+            }
         }
     }
 
@@ -327,17 +379,54 @@ checksum = "cccc"
 
     const CREATED: &str = "2026-11-12T00:00:00Z";
 
-    #[test]
-    fn lists_shipped_packages_only() {
-        let document = build(&metadata(), LOCK, CREATED, "sample").expect("valid");
-        assert_eq!(document["spdxVersion"], "SPDX-2.3");
-        assert_eq!(document["creationInfo"]["created"], CREATED);
-        let packages = document["packages"].as_array().expect("array");
-        let names: Vec<&str> = packages
+    fn shipped(packages: &[(&str, &str)]) -> BTreeSet<(String, String)> {
+        packages
+            .iter()
+            .map(|(name, version)| ((*name).to_owned(), (*version).to_owned()))
+            .collect()
+    }
+
+    fn all_shipped() -> BTreeSet<(String, String)> {
+        shipped(&[
+            ("app", "0.1.0"),
+            ("lib_one", "1.2.3+meta"),
+            ("build-helper", "2.0.0"),
+        ])
+    }
+
+    fn names(document: &Value) -> Vec<&str> {
+        document["packages"]
+            .as_array()
+            .expect("array")
             .iter()
             .map(|package| package["name"].as_str().expect("name"))
-            .collect();
-        assert_eq!(names, ["app", "build-helper", "lib_one"]);
+            .collect()
+    }
+
+    fn relationships(document: &Value) -> Vec<String> {
+        document["relationships"]
+            .as_array()
+            .expect("array")
+            .iter()
+            .map(|r| {
+                format!(
+                    "{} {} {}",
+                    r["spdxElementId"].as_str().expect("id"),
+                    r["relationshipType"].as_str().expect("type"),
+                    r["relatedSpdxElement"].as_str().expect("id")
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn lists_shipped_packages_only() {
+        let document = build(&metadata(), LOCK, &all_shipped(), CREATED, "sample").expect("valid");
+        assert_eq!(document["spdxVersion"], "SPDX-2.3");
+        assert_eq!(document["creationInfo"]["created"], CREATED);
+        // The test-only dependency is absent from the metadata walk.
+        assert_eq!(names(&document), ["app", "build-helper", "lib_one"]);
+        let packages = document["packages"].as_array().expect("array");
 
         let app = &packages[0];
         assert_eq!(app["SPDXID"], "SPDXRef-Package-app-0.1.0");
@@ -364,22 +453,9 @@ checksum = "cccc"
 
     #[test]
     fn relationships_follow_shipped_edges() {
-        let document = build(&metadata(), LOCK, CREATED, "sample").expect("valid");
-        let relationships: Vec<String> = document["relationships"]
-            .as_array()
-            .expect("array")
-            .iter()
-            .map(|r| {
-                format!(
-                    "{} {} {}",
-                    r["spdxElementId"].as_str().expect("id"),
-                    r["relationshipType"].as_str().expect("type"),
-                    r["relatedSpdxElement"].as_str().expect("id")
-                )
-            })
-            .collect();
+        let document = build(&metadata(), LOCK, &all_shipped(), CREATED, "sample").expect("valid");
         assert_eq!(
-            relationships,
+            relationships(&document),
             [
                 "SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-app-0.1.0",
                 "SPDXRef-Package-app-0.1.0 DEPENDS_ON SPDXRef-Package-lib-one-1.2.3-meta",
@@ -388,10 +464,28 @@ checksum = "cccc"
         );
     }
 
+    /// A package the metadata graph reaches but the build does not compile,
+    /// for example one that only another platform pulls in, is left out
+    /// together with the edge that led to it.
+    #[test]
+    fn packages_outside_the_build_are_left_out() {
+        let built = shipped(&[("app", "0.1.0"), ("lib_one", "1.2.3+meta")]);
+        let document = build(&metadata(), LOCK, &built, CREATED, "sample").expect("valid");
+        assert_eq!(names(&document), ["app", "lib_one"]);
+        assert_eq!(
+            relationships(&document),
+            [
+                "SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-app-0.1.0",
+                "SPDXRef-Package-app-0.1.0 DEPENDS_ON SPDXRef-Package-lib-one-1.2.3-meta",
+            ]
+        );
+    }
+
     #[test]
     fn output_is_deterministic() {
         let render = || {
-            let document = build(&metadata(), LOCK, CREATED, "sample").expect("valid");
+            let document =
+                build(&metadata(), LOCK, &all_shipped(), CREATED, "sample").expect("valid");
             serde_json::to_string_pretty(&document).expect("serialises")
         };
         assert_eq!(render(), render());
@@ -400,7 +494,7 @@ checksum = "cccc"
     #[test]
     fn rejects_bad_input() {
         let build_with = |metadata: &Value, lock: &str, created: &str| {
-            build(metadata, lock, created, "sample").map(|_| ())
+            build(metadata, lock, &all_shipped(), created, "sample").map(|_| ())
         };
         assert_eq!(
             build_with(&metadata(), LOCK, "yesterday"),
@@ -419,6 +513,17 @@ checksum = "cccc"
             Err("cargo metadata: missing `resolve`".to_owned())
         );
 
+        // The package list names something the metadata walk never reaches.
+        let mut extra = all_shipped();
+        extra.insert(("ghost".to_owned(), "1.0.0".to_owned()));
+        assert_eq!(
+            build(&metadata(), LOCK, &extra, CREATED, "sample").map(|_| ()),
+            Err(
+                "package list names ghost 1.0.0, which the metadata graph does not reach"
+                    .to_owned()
+            )
+        );
+
         // Two packages whose names differ only in a character that SPDX
         // identifiers cannot carry.
         let mut clash = metadata();
@@ -426,11 +531,32 @@ checksum = "cccc"
         clash["packages"][2]["version"] = json!("1.2.3-meta");
         clash["resolve"]["nodes"][0]["deps"][1]["pkg"] = json!("build-id");
         clash["resolve"]["nodes"][0]["deps"][1]["dep_kinds"][0]["kind"] = json!(null);
+        let clashing = shipped(&[
+            ("app", "0.1.0"),
+            ("lib_one", "1.2.3+meta"),
+            ("lib-one", "1.2.3-meta"),
+        ]);
         assert_eq!(
-            build_with(&clash, LOCK, CREATED),
+            build(&clash, LOCK, &clashing, CREATED, "sample").map(|_| ()),
             Err(
                 "two packages map to SPDX identifier SPDXRef-Package-lib-one-1.2.3-meta".to_owned()
             )
+        );
+    }
+
+    #[test]
+    fn package_list_format() {
+        assert_eq!(
+            parse_package_list("a 1.0.0\nb 2.0.0\na 1.0.0\n"),
+            Ok(shipped(&[("a", "1.0.0"), ("b", "2.0.0")]))
+        );
+        assert_eq!(
+            parse_package_list("a 1.0.0 extra\n"),
+            Err("package list, line 1: expected `name version`".to_owned())
+        );
+        assert_eq!(
+            parse_package_list(""),
+            Err("package list is empty".to_owned())
         );
     }
 

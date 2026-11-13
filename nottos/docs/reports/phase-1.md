@@ -127,6 +127,12 @@ Found while doing the work, and fixed:
    control produces different binaries (V6).
 3. **ADR-0002's table required port-controller USB disable for Tier A.** The
    brief's definition of Tier A does not. It is now a posture item.
+4. **Found after this report: the SBOM listed one package too many.** Its
+   33 entries included `libc`, which that build did not compile; nothing
+   compiled was missing. Cargo's metadata also names dependencies that
+   exist only for other platforms or for tests. Since commit "SBOM lists
+   exactly what the build compiles", the SBOM is cross-checked against
+   Cargo's own list of compiled packages and the two must be identical.
 
 ## 6. Known risks
 

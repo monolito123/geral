@@ -131,11 +131,21 @@ cmd_repro() {
 cmd_sbom() {
     cmd_build_host
     created=$(date -u -d "@$SOURCE_DATE_EPOCH" +%Y-%m-%dT%H:%M:%SZ)
-    (cd "$ROOT" && cargo metadata --format-version 1 --locked --offline) \
-        >"$OUT/host/cargo-metadata.json"
+    # Only what this platform's build uses: without the filter Cargo also
+    # lists dependencies that exist solely for other platforms.
+    host=$(rustc -vV | sed -n 's/^host: //p')
+    (cd "$ROOT" && cargo metadata --format-version 1 --locked --offline \
+        --filter-platform "$host") >"$OUT/host/cargo-metadata.json"
+    # What the build compiles: normal and build dependencies for this
+    # platform, without anything that only tests pull in.
+    (cd "$ROOT" && cargo tree --workspace --edges normal,build --target "$host" \
+        --prefix none --format '{p}' --locked --offline) |
+        awk 'NF { sub(/^v/, "", $2); print $1, $2 }' | LC_ALL=C sort -u \
+        >"$OUT/host/cargo-packages.txt"
     "$OUT/host/nott-tools" sbom \
         --metadata "$OUT/host/cargo-metadata.json" \
         --lock "$ROOT/Cargo.lock" \
+        --packages "$OUT/host/cargo-packages.txt" \
         --created "$created" \
         --name nottos-host-tools \
         --out "$OUT/host/nottos-host-tools.spdx.json"
