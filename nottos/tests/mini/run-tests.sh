@@ -84,7 +84,7 @@ flip_byte() {
 }
 # offset_of IMAGE TEXT: byte offset of the first occurrence of TEXT.
 offset_of() {
-    grep -o -b -a -F "$2" "$1" | head -n 1 | cut -d: -f1
+    grep -o -b -a -F "$2" "$1" | sed -n '1s/:.*//p'
 }
 
 rm -rf "$RUN"
@@ -96,8 +96,7 @@ echo "T1 boot from an untampered system image"
 fresh_disks
 boot "$RUN/t1.log" "$MINI/initramfs.cpio.gz" "$MINI/system.img" "nott.test=boot"
 expect "$RUN/t1.log" "shell ready"
-expected=$(yes "NOTT-MINI-NONCRITICAL-DATA-LINE" | head -c 65536 | sha256sum | cut -d' ' -f1)
-expect "$RUN/t1.log" "noncritical: read ok sha256=$expected"
+expect "$RUN/t1.log" "noncritical: read ok sha256=$(cat "$MINI/noncritical.sha256")"
 
 # --- T6: every mount is verified, volatile or encrypted (INV-02) -----------
 echo "T6 storage policy"

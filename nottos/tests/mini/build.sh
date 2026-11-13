@@ -13,6 +13,7 @@
 #   data.img              empty; encrypted and formatted on first boot
 #   scratch.img           plain ext4; the deliberate, listed exception
 #   roothash              dm-verity root hash of system.img
+#   noncritical.sha256    digest of a file in system.img that boot ignores
 set -eu
 
 HERE=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
@@ -118,10 +119,17 @@ install_programs "$SYSTEM" dmsetup e4crypt mke2fs
 cp "$HERE/init-stage2" "$SYSTEM/sbin/init"
 chmod 755 "$SYSTEM/sbin/init"
 echo "nott-mini 1" >"$SYSTEM/etc/nott-release"
-# A file that boot does not need. Exactly 64 KiB, so that it occupies whole
-# blocks of its own and tampering with it leaves boot-critical blocks alone.
-yes "NOTT-MINI-NONCRITICAL-DATA-LINE" | head -c 65536 \
+# A file that boot does not need. Exactly 64 KiB (2048 lines of 32 bytes),
+# so that it occupies whole blocks of its own and tampering with it leaves
+# boot-critical blocks alone. Its digest is recorded for the tests.
+awk 'BEGIN { for (i = 0; i < 2048; i++) print "NOTT-MINI-NONCRITICAL-DATA-LINE" }' \
     >"$SYSTEM/etc/nott/noncritical.txt"
+[ "$(wc -c <"$SYSTEM/etc/nott/noncritical.txt")" -eq 65536 ] || {
+    echo "mini: noncritical.txt is not 64 KiB" >&2
+    exit 1
+}
+sha256sum <"$SYSTEM/etc/nott/noncritical.txt" | cut -d' ' -f1 \
+    >"$OUT/noncritical.sha256"
 
 mkfs.erofs --quiet --all-root -T 0 \
     -U 6e6f7474-6d69-6e69-0000-000000000001 "$OUT/system.img" "$SYSTEM"
