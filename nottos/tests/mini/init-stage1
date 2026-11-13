@@ -1,9 +1,9 @@
 #!/bin/busybox sh
 # SPDX-License-Identifier: Apache-2.0
 # Stage 1 of the minimal Linux test target. It runs from the initramfs, which
-# stands in for a bootloader-verified boot image: it carries the dm-verity
-# root hash of the system image and refuses to continue if the system image
-# does not match it.
+# stands in for a bootloader-verified boot image: it carries the release
+# public key. It accepts a dm-verity root hash only from a build manifest
+# signed by that key, and refuses to continue otherwise.
 #
 # Test scaffolding, not NottOS product code. See README.md.
 
@@ -31,8 +31,25 @@ while read -r module; do
     insmod "/modules/$module" || halt "FAIL stage1: insmod $module"
 done </modules/order
 
-# System image: read-only, every block checked against the root hash.
-/sbin/veritysetup open /dev/vda system /dev/vdb "$(cat /etc/nott/roothash)" ||
+# Boot metadata: three zero-padded 64 KiB slots on an untrusted disk. Nothing
+# in them is interpreted until the signature has been checked.
+mkdir /run/meta
+slot() {
+    dd if=/dev/vde bs=65536 skip="$1" count=1 2>/dev/null |
+        tr -d '\000' >"/run/meta/$2"
+}
+slot 0 manifest
+slot 1 manifest.sig
+slot 2 system.roothash
+/sbin/nott-tools manifest verify /run/meta/manifest --dir /run/meta \
+    --only system.roothash \
+    --public-key /etc/nott/release.public \
+    --signature /run/meta/manifest.sig ||
+    halt "FAIL stage1: boot metadata is not authentic"
+
+# System image: read-only, every block checked against the root hash that
+# the signed manifest vouches for.
+/sbin/veritysetup open /dev/vda system /dev/vdb "$(cat /run/meta/system.roothash)" ||
     halt "FAIL stage1: verity open"
 mount -t erofs -o ro /dev/mapper/system /system ||
     halt "FAIL stage1: mount system"

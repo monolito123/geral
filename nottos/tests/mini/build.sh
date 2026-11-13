@@ -2,27 +2,38 @@
 # SPDX-License-Identifier: Apache-2.0
 # Builds the minimal Linux test target. See README.md in this directory.
 #
-# usage: build.sh OUT_DIR
+# usage: build.sh OUT_DIR NOTT_TOOLS
 #
 # Produces in OUT_DIR:
 #   vmlinuz               distribution kernel, unmodified
-#   initramfs.cpio.gz     the "boot image": stage 1, modules, root hash, key
-#   initramfs-badhash.cpio.gz  same, with one digit of the root hash changed
+#   initramfs.cpio.gz     the "boot image": stage 1, modules, nott-tools and
+#                         the trusted release public key
 #   system.img            read-only EROFS system image
 #   system.verity         dm-verity hash tree for system.img
+#   system.roothash       dm-verity root hash of system.img
+#   manifest              build manifest listing the three files above
+#   meta.img              boot metadata: manifest, its signature by the
+#                         release key, and the root hash
+#   meta-otherkey.img     the same, signed by a key the boot image does not
+#                         trust
+#   keys/                 test keys, generated afresh by every build
 #   data.img              empty; encrypted and formatted on first boot
 #   scratch.img           plain ext4; the deliberate, listed exception
-#   roothash              dm-verity root hash of system.img
 #   noncritical.sha256    digest of a file in system.img that boot ignores
 set -eu
 
 HERE=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
-[ $# -eq 1 ] || {
-    echo "usage: build.sh OUT_DIR" >&2
+[ $# -eq 2 ] || {
+    echo "usage: build.sh OUT_DIR NOTT_TOOLS" >&2
     exit 2
 }
 mkdir -p "$1/cache"
 OUT=$(CDPATH='' cd -- "$1" && pwd)
+TOOLS=$(CDPATH='' cd -- "$(dirname -- "$2")" && pwd)/$(basename -- "$2")
+[ -x "$TOOLS" ] || {
+    echo "mini: not executable: $2" >&2
+    exit 2
+}
 WORK="$OUT/work"
 # Several of the tools below live in sbin, which is not always on PATH.
 PATH=$PATH:/usr/sbin:/sbin
@@ -94,14 +105,14 @@ install_busybox() {
 }
 
 # Copies dynamically linked programs, and the libraries they need, into
-# the tree at $1. Programs go to $1/sbin.
+# the tree at $1. Programs are given by name or by path and go to $1/sbin.
 install_programs() {
     tree=$1
     shift
     mkdir -p "$tree/sbin"
     for program in "$@"; do
         path=$(command -v "$program")
-        cp "$path" "$tree/sbin/$program"
+        cp "$path" "$tree/sbin/$(basename "$program")"
         ldd "$path" | sed -n 's|.* => \(/[^ ]*\) .*|\1|p; s|^[[:space:]]*\(/[^ ]*\) (0x.*|\1|p' |
             while read -r library; do
                 mkdir -p "$tree$(dirname "$library")"
@@ -137,18 +148,65 @@ veritysetup format \
     --salt 6e6f74746d696e692d73797374656d2d73616c74000000000000000000000001 \
     --uuid 6e6f7474-6d69-6e69-0000-000000000002 \
     "$OUT/system.img" "$OUT/system.verity" |
-    sed -n 's/^Root hash:[[:space:]]*//p' >"$OUT/roothash"
-[ "$(wc -c <"$OUT/roothash")" -eq 65 ] || {
+    sed -n 's/^Root hash:[[:space:]]*//p' >"$OUT/system.roothash"
+[ "$(wc -c <"$OUT/system.roothash")" -eq 65 ] || {
     echo "mini: could not read the dm-verity root hash" >&2
     exit 1
 }
+
+# --- signed boot metadata ---------------------------------------------------
+# Test keys, new on every build. "release" is the key the boot image trusts;
+# "other" is a key it does not.
+rm -rf "$OUT/keys"
+mkdir -p "$OUT/keys"
+for name in release other; do
+    "$TOOLS" key generate --out-secret "$OUT/keys/$name.secret" \
+        --out-public "$OUT/keys/$name.public" >/dev/null
+done
+"$TOOLS" manifest create --version 0.1.0 --build-id MINI \
+    --security-patch "$(date -u -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y-%m-%d)" \
+    --target mini_x86_64 --vb-key "$OUT/keys/release.public" \
+    --image "system.img=$OUT/system.img" \
+    --image "system.verity=$OUT/system.verity" \
+    --image "system.roothash=$OUT/system.roothash" \
+    --out "$OUT/manifest" >/dev/null
+for name in release other; do
+    "$TOOLS" sign "$OUT/manifest" --key "$OUT/keys/$name.secret" \
+        --context build-manifest --out "$WORK/manifest.$name.sig" >/dev/null
+done
+
+# The metadata disk has no filesystem and no archive format, so that the
+# boot stage parses nothing before the signature is checked: three slots of
+# 64 KiB each, holding the manifest, its signature and the root hash, each
+# padded with zero bytes.
+SLOT=65536
+slot() {
+    size=$(wc -c <"$1")
+    [ "$size" -le "$SLOT" ] || {
+        echo "mini: $1 does not fit a metadata slot" >&2
+        exit 1
+    }
+    cat "$1"
+    head -c $((SLOT - size)) /dev/zero
+}
+for name in release other; do
+    {
+        slot "$OUT/manifest"
+        slot "$WORK/manifest.$name.sig"
+        slot "$OUT/system.roothash"
+    } >"$WORK/meta.$name.img"
+done
+mv "$WORK/meta.release.img" "$OUT/meta.img"
+mv "$WORK/meta.other.img" "$OUT/meta-otherkey.img"
 
 # --- boot image (initramfs) -------------------------------------------------
 BOOT="$WORK/initramfs"
 mkdir -p "$BOOT/etc/nott" "$BOOT/modules" "$BOOT/dev" "$BOOT/proc" \
     "$BOOT/sys" "$BOOT/run" "$BOOT/system"
 install_busybox "$BOOT"
-install_programs "$BOOT" veritysetup cryptsetup
+install_programs "$BOOT" veritysetup cryptsetup "$TOOLS"
+# The trust anchor: the only key whose signature on boot metadata counts.
+cp "$OUT/keys/release.public" "$BOOT/etc/nott/release.public"
 cp "$HERE/init-stage1" "$BOOT/init"
 chmod 755 "$BOOT/init"
 
@@ -182,18 +240,8 @@ module_order "$MODULES/modules.dep" $wanted | awk '!seen[$0]++' |
 printf 'nott-mini test metadata key' | openssl dgst -sha512 -binary \
     >"$BOOT/etc/nott/metadata.key"
 
-# pack_boot OUTPUT: archives the boot tree with root ownership.
-pack_boot() {
-    (cd "$BOOT" && find . | LC_ALL=C sort |
-        cpio --quiet -o -H newc --owner=0:0) | gzip -n >"$1"
-}
-cp "$OUT/roothash" "$BOOT/etc/nott/roothash"
-pack_boot "$OUT/initramfs.cpio.gz"
-# Same boot image with the first digit of the root hash changed.
-first=$(cut -c1 "$OUT/roothash")
-if [ "$first" = 0 ]; then other=1; else other=0; fi
-echo "$other$(cut -c2- "$OUT/roothash")" >"$BOOT/etc/nott/roothash"
-pack_boot "$OUT/initramfs-badhash.cpio.gz"
+(cd "$BOOT" && find . | LC_ALL=C sort |
+    cpio --quiet -o -H newc --owner=0:0) | gzip -n >"$OUT/initramfs.cpio.gz"
 
 # --- data and scratch -------------------------------------------------------
 rm -f "$OUT/data.img" "$OUT/scratch.img"
@@ -202,4 +250,4 @@ truncate -s 16M "$OUT/scratch.img"
 mke2fs -q -t ext4 -F -E root_owner=0:0 "$OUT/scratch.img"
 
 rm -rf "$WORK"
-echo "mini: built in $OUT (kernel $KERNEL, root hash $(cut -c1-16 "$OUT/roothash")...)"
+echo "mini: built in $OUT (kernel $KERNEL, root hash $(cut -c1-16 "$OUT/system.roothash")...)"

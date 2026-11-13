@@ -145,19 +145,19 @@ case "${1:-} ${2:-}" in
 "build host") cmd_build_host ;;
 "build mini")
     cmd_build_host
-    "$ROOT/tests/mini/build.sh" "$OUT/mini"
+    "$ROOT/tests/mini/build.sh" "$OUT/mini" "$OUT/host/nott-tools"
     ;;
 "check ") cmd_check ;;
 "repro ") cmd_repro ;;
 "sbom ") cmd_sbom ;;
 "mini test")
     cmd_build_host
-    "$ROOT/tests/mini/build.sh" "$OUT/mini"
+    "$ROOT/tests/mini/build.sh" "$OUT/mini" "$OUT/host/nott-tools"
     "$ROOT/tests/mini/run-tests.sh" "$OUT/mini" "$OUT/host/nott-tools"
     ;;
 "mini shell")
     cmd_build_host
-    "$ROOT/tests/mini/build.sh" "$OUT/mini"
+    "$ROOT/tests/mini/build.sh" "$OUT/mini" "$OUT/host/nott-tools"
     "$ROOT/tests/mini/run-tests.sh" "$OUT/mini" "$OUT/host/nott-tools" shell
     ;;
 " " | "help " | "--help ") usage ;;

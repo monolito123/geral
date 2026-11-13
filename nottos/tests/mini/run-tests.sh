@@ -19,18 +19,19 @@ TIMEOUT=${NOTT_MINI_TIMEOUT:-300}
 ACCEL=tcg
 if [ -w /dev/kvm ]; then ACCEL=kvm; fi
 
-# boot LOG INITRAMFS SYSTEM_IMAGE KERNEL_ARGUMENTS
+# boot LOG SYSTEM_IMAGE METADATA_IMAGE KERNEL_ARGUMENTS
 # Uses $RUN/data.img and $RUN/scratch.img as the writable disks.
 boot() {
     timeout "$TIMEOUT" qemu-system-x86_64 \
         -accel "$ACCEL" -cpu max -m 1024 -smp 2 \
         -nodefaults -no-reboot -display none -serial "file:$1" \
-        -kernel "$MINI/vmlinuz" -initrd "$2" \
+        -kernel "$MINI/vmlinuz" -initrd "$MINI/initramfs.cpio.gz" \
         -append "console=ttyS0 loglevel=4 panic=-1 $4" \
-        -drive "file=$3,if=virtio,format=raw,readonly=on" \
+        -drive "file=$2,if=virtio,format=raw,readonly=on" \
         -drive "file=$MINI/system.verity,if=virtio,format=raw,readonly=on" \
         -drive "file=$RUN/data.img,if=virtio,format=raw" \
-        -drive "file=$RUN/scratch.img,if=virtio,format=raw" || true
+        -drive "file=$RUN/scratch.img,if=virtio,format=raw" \
+        -drive "file=$3,if=virtio,format=raw,readonly=on" || true
     # Serial output uses CR LF line endings.
     tr -d '\r' <"$1" >"$1.txt"
 }
@@ -47,7 +48,8 @@ if [ "${3:-}" = shell ]; then
         -drive "file=$MINI/system.img,if=virtio,format=raw,readonly=on" \
         -drive "file=$MINI/system.verity,if=virtio,format=raw,readonly=on" \
         -drive "file=$RUN/data.img,if=virtio,format=raw" \
-        -drive "file=$RUN/scratch.img,if=virtio,format=raw"
+        -drive "file=$RUN/scratch.img,if=virtio,format=raw" \
+        -drive "file=$MINI/meta.img,if=virtio,format=raw,readonly=on"
 fi
 
 FAILED=0
@@ -65,6 +67,10 @@ expect() {
 # refuse LOG TEXT: the log contains no line equal to "NOTT-MINI: TEXT".
 refuse() {
     if grep -q -x -F "NOTT-MINI: $2" "$1.txt"; then fail "unexpected: $2"; else pass "absent: $2"; fi
+}
+# logged LOG TEXT: some line of the log contains TEXT.
+logged() {
+    if grep -q -F "$2" "$1.txt"; then pass "logged: $2"; else fail "not logged: $2"; fi
 }
 # count FILE TEXT: number of lines of FILE that contain TEXT.
 count() {
@@ -94,8 +100,9 @@ echo "mini: kernel $(cat "$MINI/kernel-version"), accelerator $ACCEL"
 # --- T1: verified boot to a shell ------------------------------------------
 echo "T1 boot from an untampered system image"
 fresh_disks
-boot "$RUN/t1.log" "$MINI/initramfs.cpio.gz" "$MINI/system.img" "nott.test=boot"
+boot "$RUN/t1.log" "$MINI/system.img" "$MINI/meta.img" "nott.test=boot"
 expect "$RUN/t1.log" "shell ready"
+logged "$RUN/t1.log" "ok   signature by key $(sha256sum <"$MINI/keys/release.public" | cut -d' ' -f1)"
 expect "$RUN/t1.log" "noncritical: read ok sha256=$(cat "$MINI/noncritical.sha256")"
 
 # --- T6: every mount is verified, volatile or encrypted (INV-02) -----------
@@ -122,7 +129,7 @@ fresh_disks
 cp "$MINI/system.img" "$RUN/system-critical.img"
 flip_byte "$RUN/system-critical.img" \
     "$(offset_of "$RUN/system-critical.img" NOTT-MINI-STAGE2-MARKER)"
-boot "$RUN/t2.log" "$MINI/initramfs.cpio.gz" "$RUN/system-critical.img" "nott.test=boot"
+boot "$RUN/t2.log" "$RUN/system-critical.img" "$MINI/meta.img" "nott.test=boot"
 refuse "$RUN/t2.log" "shell ready"
 if grep -q -i 'verity.*corrupt' "$RUN/t2.log.txt"; then
     pass "kernel reported dm-verity corruption"
@@ -136,7 +143,7 @@ fresh_disks
 cp "$MINI/system.img" "$RUN/system-noncritical.img"
 start=$(offset_of "$RUN/system-noncritical.img" NOTT-MINI-NONCRITICAL-DATA-LINE)
 flip_byte "$RUN/system-noncritical.img" $((start + 32768))
-boot "$RUN/t3.log" "$MINI/initramfs.cpio.gz" "$RUN/system-noncritical.img" "nott.test=boot"
+boot "$RUN/t3.log" "$RUN/system-noncritical.img" "$MINI/meta.img" "nott.test=boot"
 expect "$RUN/t3.log" "shell ready"
 expect "$RUN/t3.log" "noncritical: read error"
 if [ "$(count "$RUN/t3.log.txt" 'noncritical: read ok')" -eq 0 ]; then
@@ -145,11 +152,34 @@ else
     fail "tampered data was returned"
 fi
 
-# --- T4: boot image carries a different root hash --------------------------
-echo "T4 boot image with a different root hash"
+# --- T4: boot metadata that the trusted key did not sign -------------------
+echo "T4a boot metadata signed by a key the boot image does not trust"
 fresh_disks
-boot "$RUN/t4.log" "$MINI/initramfs-badhash.cpio.gz" "$MINI/system.img" "nott.test=boot"
-refuse "$RUN/t4.log" "shell ready"
+boot "$RUN/t4a.log" "$MINI/system.img" "$MINI/meta-otherkey.img" "nott.test=boot"
+refuse "$RUN/t4a.log" "shell ready"
+expect "$RUN/t4a.log" "FAIL stage1: boot metadata is not authentic"
+logged "$RUN/t4a.log" "signature was made by a different key"
+
+echo "T4b manifest changed after it was signed"
+fresh_disks
+cp "$MINI/meta.img" "$RUN/meta-edited.img"
+# Turns build-id "MINI" into "LINI": still a well-formed manifest.
+flip_byte "$RUN/meta-edited.img" $(($(offset_of "$RUN/meta-edited.img" "build-id: ") + 10))
+boot "$RUN/t4b.log" "$MINI/system.img" "$RUN/meta-edited.img" "nott.test=boot"
+refuse "$RUN/t4b.log" "shell ready"
+expect "$RUN/t4b.log" "FAIL stage1: boot metadata is not authentic"
+logged "$RUN/t4b.log" "signature is not valid for this key and message"
+
+echo "T4c root hash replaced; manifest and signature untouched"
+fresh_disks
+cp "$MINI/meta.img" "$RUN/meta-roothash.img"
+# The root hash is the third 64 KiB slot. Changing the lowest bit of a
+# hexadecimal digit gives another hexadecimal digit.
+flip_byte "$RUN/meta-roothash.img" 131072
+boot "$RUN/t4c.log" "$MINI/system.img" "$RUN/meta-roothash.img" "nott.test=boot"
+refuse "$RUN/t4c.log" "shell ready"
+expect "$RUN/t4c.log" "FAIL stage1: boot metadata is not authentic"
+logged "$RUN/t4c.log" "FAIL system.roothash: sha256"
 
 # --- T5: encrypted storage --------------------------------------------------
 echo "T5 encrypted storage"
@@ -159,7 +189,7 @@ DEVICE=NOTT-CANARY-DEVICE-55aa33cc0f1e2d3c
 PLAIN=NOTT-CANARY-PLAIN-9b8a7c6d5e4f3021
 CANARIES="nott.content=$CONTENT nott.name=$NAME nott.device=$DEVICE nott.plain=$PLAIN"
 fresh_disks
-boot "$RUN/t5-provision.log" "$MINI/initramfs.cpio.gz" "$MINI/system.img" \
+boot "$RUN/t5-provision.log" "$MINI/system.img" "$MINI/meta.img" \
     "nott.test=provision nott.pass=correct-horse $CANARIES"
 expect "$RUN/t5-provision.log" "provision: done"
 
@@ -180,18 +210,18 @@ else
     fail "control: the scan missed plaintext on the unencrypted scratch disk"
 fi
 
-boot "$RUN/t5-locked.log" "$MINI/initramfs.cpio.gz" "$MINI/system.img" \
+boot "$RUN/t5-locked.log" "$MINI/system.img" "$MINI/meta.img" \
     "nott.test=locked $CANARIES"
 expect "$RUN/t5-locked.log" "locked: entries=1"
 expect "$RUN/t5-locked.log" "locked: name hidden"
 expect "$RUN/t5-locked.log" "locked: read denied"
 expect "$RUN/t5-locked.log" "locked: device file readable"
 
-boot "$RUN/t5-wrongpass.log" "$MINI/initramfs.cpio.gz" "$MINI/system.img" \
+boot "$RUN/t5-wrongpass.log" "$MINI/system.img" "$MINI/meta.img" \
     "nott.test=wrongpass nott.pass=wrong-horse $CANARIES"
 expect "$RUN/t5-wrongpass.log" "wrongpass: read denied"
 
-boot "$RUN/t5-unlock.log" "$MINI/initramfs.cpio.gz" "$MINI/system.img" \
+boot "$RUN/t5-unlock.log" "$MINI/system.img" "$MINI/meta.img" \
     "nott.test=unlock nott.pass=correct-horse $CANARIES"
 expect "$RUN/t5-unlock.log" "unlock: content ok"
 
