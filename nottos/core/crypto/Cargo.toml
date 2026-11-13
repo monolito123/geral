@@ -10,15 +10,19 @@ publish.workspace = true
 [dependencies]
 nott-format.workspace = true
 getrandom.workspace = true
+fips205.workspace = true
 libcrux-ed25519.workspace = true
 libcrux-ml-dsa.workspace = true
+rand_core.workspace = true
 sha2.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
-# A second, independent ML-DSA implementation, used only to cross-check the
-# first in tests. It is never linked into anything that ships.
+# Second, independent implementations of ML-DSA and SLH-DSA, used only to
+# cross-check the first ones in tests. They are never linked into anything
+# that ships.
 ml-dsa.workspace = true
+slh-dsa.workspace = true
 
 [lints]
 workspace = true

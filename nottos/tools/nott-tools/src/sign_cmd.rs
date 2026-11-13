@@ -6,7 +6,7 @@
 use crate::args::Args;
 use crate::util::{read_text, write_text};
 use crate::{CommandResult, Outcome};
-use nott_crypto::{PublicKey, SecretKey, Signature};
+use nott_crypto::{PublicKey, SecretKey, Signature, Suite};
 use std::fs;
 use std::io::Write as _;
 use std::os::unix::fs::OpenOptionsExt as _;
@@ -35,12 +35,19 @@ fn read_message(path: &str) -> Result<Vec<u8>, String> {
 }
 
 pub(crate) fn key_generate(raw: &[&str]) -> CommandResult {
-    let args = Args::parse(raw, &["out-secret", "out-public"])?;
+    let args = Args::parse(raw, &["suite", "out-secret", "out-public"])?;
     let [] = args.positionals()?;
     let secret_path = args.required("out-secret")?;
     let public_path = args.required("out-public")?;
+    let suite = match args.optional("suite")? {
+        None => Suite::Ed25519MlDsa87,
+        Some(name) => Suite::from_name(name).ok_or_else(|| {
+            let known: Vec<&str> = Suite::ALL.iter().map(|suite| suite.name()).collect();
+            format!("unknown suite `{name}`; known: {}", known.join(", "))
+        })?,
+    };
 
-    let key = SecretKey::generate().map_err(|error| error.to_string())?;
+    let key = SecretKey::generate(suite).map_err(|error| error.to_string())?;
     let public = key.public_key();
     // The secret key is readable by its owner only, and an existing file is
     // never overwritten.
@@ -54,7 +61,8 @@ pub(crate) fn key_generate(raw: &[&str]) -> CommandResult {
         .map_err(|error| format!("{secret_path}: {error}"))?;
     write_text(Path::new(public_path), &public.to_string())?;
     Ok(Outcome::Pass(format!(
-        "wrote {secret_path} (secret) and {public_path}\nkey-id: {}\n",
+        "wrote {secret_path} (secret) and {public_path}\nsuite: {}\nkey-id: {}\n",
+        suite.name(),
         public.key_id()
     )))
 }

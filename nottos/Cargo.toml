@@ -18,7 +18,12 @@ getrandom = "0.4.3"
 # (docs/adr/0008-signature-suite.md).
 libcrux-ed25519 = { version = "=0.0.10", default-features = false }
 libcrux-ml-dsa = { version = "=0.0.11", default-features = false, features = ["std", "mldsa87"] }
+fips205 = { version = "=0.5.0", default-features = false, features = ["slh-dsa-sha2-256s"] }
+# The random-number interface fips205 expects.
+rand_core = "0.6.4"
+# Second implementations, used only to cross-check the first in tests.
 ml-dsa = "=0.1.2"
+slh-dsa = "=0.1.0"
 serde = { version = "1.0.200", features = ["derive"] }
 serde_json = "1.0.120"
 sha2 = "0.10.8"
@@ -34,6 +39,12 @@ all = { level = "warn", priority = -1 }
 
 # Settings that keep release artifacts identical across build directories
 # (docs/adr/0006-build-reproducibility.md).
+# Dependencies are optimised even in test builds: hash-based signatures take
+# minutes to compute unoptimised, seconds optimised. NottOS's own crates stay
+# unoptimised so that debugging and overflow checks keep working.
+[profile.dev.package."*"]
+opt-level = 3
+
 [profile.release]
 debug = false
 strip = "symbols"

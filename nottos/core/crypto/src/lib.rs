@@ -7,11 +7,12 @@
 //! therefore requires breaking both algorithms.
 //!
 //! This crate implements no cryptographic primitive. It composes Ed25519
-//! (RFC 8032) and ML-DSA-87 (FIPS 204) from the `libcrux` implementations
-//! and SHA-512 from `sha2`. The construction and the choice of
-//! implementations are recorded in `docs/adr/0008-signature-suite.md`.
+//! (RFC 8032) and ML-DSA-87 (FIPS 204) from the `libcrux` implementations,
+//! SLH-DSA-SHA2-256s (FIPS 205) from `fips205`, and SHA-512 from `sha2`. The
+//! construction and the choice of implementations are recorded in
+//! `docs/adr/0008-signature-suite.md` and `docs/adr/0009-update-system.md`.
 //!
-//! # Suite 1: `ed25519+ml-dsa-87`
+//! # Construction, every suite
 //!
 //! To sign message `M` for purpose `context`, both algorithms sign the same
 //! *representative*:
@@ -23,19 +24,24 @@
 //!     || SHA-512(M)
 //! ```
 //!
-//! - `ed25519 = Ed25519.Sign(sk1, R)`
-//! - `ml-dsa-87 = ML-DSA-87.Sign(sk2, R, ctx = "")`, hedged
+//! - classical half: `Ed25519.Sign(sk1, R)`
+//! - post-quantum half: `ML-DSA-87.Sign(sk2, R, ctx = "")` (suite 1) or
+//!   `SLH-DSA-SHA2-256s.Sign(sk2, R, ctx = "")` (suite 2), both hedged
 //!
 //! Because `R` names the construction, the suite and the purpose, a
 //! component signature taken out of a hybrid signature is not a signature on
-//! `M` under that algorithm alone, and a signature made for one purpose does
-//! not verify for another.
+//! `M` under that algorithm alone, a signature made for one purpose does not
+//! verify for another, and a signature made under one suite does not verify
+//! under another.
 
+mod rng;
 mod secret;
 
-pub use nott_format::signature::{FormatError, PublicKey, Signature, Suite};
+pub use nott_format::signature::{FormatError, PublicKey, Signature, SignatureSet, Suite};
 pub use secret::SecretKey;
 
+use fips205::slh_dsa_sha2_256s;
+use fips205::traits::{SerDes as _, Verifier as _};
 use libcrux_ml_dsa::ml_dsa_87::{self, MLDSA87Signature, MLDSA87VerificationKey};
 use nott_format::signature::is_context;
 use sha2::{Digest as _, Sha512};
@@ -45,14 +51,18 @@ use std::fmt;
 pub mod context {
     /// A release build manifest (`nott_format::manifest`).
     pub const BUILD_MANIFEST: &str = "build-manifest";
+    /// Root metadata of the update system (`nott_format::update`).
+    pub const ROOT_METADATA: &str = "root-metadata";
+    /// Update metadata (`nott_format::update`).
+    pub const UPDATE_METADATA: &str = "update-metadata";
 }
 
 /// First bytes of every representative, including the terminating zero.
 const LABEL: &[u8] = b"NottOS-hybrid-signature-v1\0";
 
-/// ML-DSA's own context string. Always empty: the purpose is already bound
-/// into the representative, for both algorithms alike.
-const ML_DSA_CONTEXT: &[u8] = b"";
+/// The post-quantum algorithm's own context string. Always empty: the
+/// purpose is already bound into the representative, for both halves alike.
+const PQ_CONTEXT: &[u8] = b"";
 
 /// Why a signing operation failed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61,6 +71,8 @@ pub enum CryptoError {
     Randomness,
     /// The context is not a valid context name.
     InvalidContext,
+    /// A seed does not have the length the suite requires.
+    InvalidSeed,
     /// A component algorithm reported failure.
     Signing,
 }
@@ -70,6 +82,7 @@ impl fmt::Display for CryptoError {
         f.write_str(match self {
             Self::Randomness => "the operating system provided no randomness",
             Self::InvalidContext => "invalid signature context name",
+            Self::InvalidSeed => "seed has the wrong length for this suite",
             Self::Signing => "signing failed",
         })
     }
@@ -138,27 +151,52 @@ pub fn verify(
     if signature.key_id() != public_key.key_id() {
         return Err(VerifyError::KeyMismatch);
     }
-    match public_key.suite() {
+    let suite = public_key.suite();
+    let representative =
+        representative(suite, context, message).ok_or(VerifyError::ContextMismatch)?;
+    // Both halves are always evaluated; which one failed is not reported.
+    let classical_valid =
+        libcrux_ed25519::verify(&representative, public_key.ed25519(), signature.ed25519()).is_ok();
+    let post_quantum_valid = verify_post_quantum(
+        suite,
+        public_key.post_quantum(),
+        &representative,
+        signature.post_quantum(),
+    );
+    if classical_valid && post_quantum_valid {
+        Ok(())
+    } else {
+        Err(VerifyError::BadSignature)
+    }
+}
+
+/// Checks the post-quantum half. Lengths have already been enforced by the
+/// formats; a mismatch here is still treated as an invalid signature.
+fn verify_post_quantum(suite: Suite, key: &[u8], representative: &[u8], signature: &[u8]) -> bool {
+    match suite {
         Suite::Ed25519MlDsa87 => {
-            let representative = representative(public_key.suite(), context, message)
-                .ok_or(VerifyError::ContextMismatch)?;
-            // Both components are always evaluated; which one failed is not
-            // reported.
-            let ed25519_valid =
-                libcrux_ed25519::verify(&representative, public_key.ed25519(), signature.ed25519())
-                    .is_ok();
-            let ml_dsa_valid = ml_dsa_87::verify(
-                &MLDSA87VerificationKey::new(*public_key.ml_dsa_87()),
-                &representative,
-                ML_DSA_CONTEXT,
-                &MLDSA87Signature::new(*signature.ml_dsa_87()),
+            let (Ok(key), Ok(signature)) = (key.try_into(), signature.try_into()) else {
+                return false;
+            };
+            ml_dsa_87::verify(
+                &MLDSA87VerificationKey::new(key),
+                representative,
+                PQ_CONTEXT,
+                &MLDSA87Signature::new(signature),
             )
-            .is_ok();
-            if ed25519_valid && ml_dsa_valid {
-                Ok(())
-            } else {
-                Err(VerifyError::BadSignature)
-            }
+            .is_ok()
+        }
+        Suite::Ed25519SlhDsaSha2_256s => {
+            let Ok(key) = <[u8; slh_dsa_sha2_256s::PK_LEN]>::try_from(key) else {
+                return false;
+            };
+            let Ok(signature) = <&[u8; slh_dsa_sha2_256s::SIG_LEN]>::try_from(signature) else {
+                return false;
+            };
+            let Ok(key) = slh_dsa_sha2_256s::PublicKey::try_from_bytes(key) else {
+                return false;
+            };
+            key.verify(representative, signature, PQ_CONTEXT)
         }
     }
 }
@@ -188,20 +226,36 @@ mod tests {
     }
 
     #[test]
-    fn representative_separates_contexts_and_messages() {
-        let of = |context, message: &[u8]| {
-            representative(Suite::Ed25519MlDsa87, context, message).expect("valid context")
+    fn representative_separates_suites_contexts_and_messages() {
+        let of = |suite, context, message: &[u8]| {
+            representative(suite, context, message).expect("valid context")
         };
-        assert_ne!(of("a", b"m"), of("b", b"m"));
-        assert_ne!(of("a", b"m"), of("a", b"n"));
+        let suite = Suite::Ed25519MlDsa87;
+        assert_ne!(of(suite, "a", b"m"), of(suite, "b", b"m"));
+        assert_ne!(of(suite, "a", b"m"), of(suite, "a", b"n"));
+        assert_ne!(
+            of(Suite::Ed25519MlDsa87, "a", b"m"),
+            of(Suite::Ed25519SlhDsaSha2_256s, "a", b"m")
+        );
         // The length byte keeps a context from sliding into the digest.
-        assert_ne!(of("ab", b"m")[..30], of("a", b"m")[..30]);
+        assert_ne!(of(suite, "ab", b"m")[..30], of(suite, "a", b"m")[..30]);
     }
 
     #[test]
     fn representative_rejects_invalid_contexts() {
         for context in ["", "Upper", "has space", &"x".repeat(33)] {
             assert!(representative(Suite::Ed25519MlDsa87, context, b"m").is_none());
+        }
+    }
+
+    #[test]
+    fn wrong_lengths_never_verify() {
+        for suite in Suite::ALL {
+            let key = vec![0u8; suite.post_quantum_public_key_len()];
+            let signature = vec![0u8; suite.post_quantum_signature_len()];
+            assert!(!verify_post_quantum(suite, &key[1..], b"r", &signature));
+            assert!(!verify_post_quantum(suite, &key, b"r", &signature[1..]));
+            assert!(!verify_post_quantum(suite, &key, b"r", &signature));
         }
     }
 }

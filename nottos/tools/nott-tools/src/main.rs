@@ -31,7 +31,7 @@ pub(crate) type CommandResult = Result<Outcome, String>;
 const USAGE: &str = "\
 usage: nott-tools <command>
 
-  key generate --out-secret FILE --out-public FILE
+  key generate [--suite NAME] --out-secret FILE --out-public FILE
   key id PUBLIC_KEY
   sign FILE --key SECRET_KEY --context NAME --out SIGNATURE
   verify FILE --public-key FILE --signature FILE --context NAME

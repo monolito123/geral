@@ -1,6 +1,7 @@
 # ADR-0008: Hybrid signature suite and formats
 
-- **Status:** Accepted (2026-11-13; decided under the owner's delegation)
+- **Status:** Accepted (2026-11-13; decided under the owner's delegation).
+  Amended the same day: suite 2 for root keys (section "Suite 2").
 - **Date:** 2026-11-13
 - **Decider:** project owner (delegated)
 
@@ -116,11 +117,69 @@ Evidence required and in place (`core/crypto/tests`):
   different keys are all rejected.
 - A pinned test vector for the whole construction.
 
+## Suite 2: `ed25519+slh-dsa-sha2-256s`, for root keys
+
+The brief asks for SLH-DSA (FIPS 205) for long-lived roots such as the
+update and verified-boot root keys.
+
+**Why a different post-quantum algorithm at the root.** SLH-DSA's security
+rests only on the hash function. ML-DSA rests on lattice problems. If a
+weakness is ever found in lattice signatures, release keys under suite 1
+would be at risk, but a root under suite 2 would still stand and could
+certify replacement keys under a new suite. The root is the recovery
+anchor, so it must not share the release keys' assumptions.
+
+**Parameter set.** SLH-DSA-SHA2-256s: security category 5, like ML-DSA-87;
+the "s" variants have the smaller signatures (29,792 bytes) at the cost of
+slow signing, which suits a key that signs rarely. SHA-2 rather than SHAKE
+because SHA-2 instructions are common on both Arm and x86 hosts.
+
+**Construction.** Identical to suite 1, with suite id 2 in the
+representative; the post-quantum half is
+`SLH-DSA-SHA2-256s.Sign(sk2, R, ctx = "")`, hedged.
+
+**Implementation.** No formally verified SLH-DSA exists in Rust today, and
+neither candidate claims an audit `[V:F-32]`:
+
+| Option | Assessment |
+|---|---|
+| **`fips205` 0.5.0** | Pure Rust, no `unsafe`; implements the final FIPS 205; constant-time key generation and signing claimed at source level and checked with `dudect` measurements; seeds in, fixed-size arrays out |
+| RustCrypto `slh-dsa` 0.1.0 | Pure Rust; states that it "has never been independently audited" |
+
+`fips205` is used, pinned to an exact version. RustCrypto `slh-dsa` is used
+only in tests, as the second implementation. (Its declared dependency on a
+pre-release `signature` crate resolves to an incompatible later
+pre-release, so the lock file pins `signature` to `2.3.0-pre.4`. This
+affects tests only.)
+
+**Secret key.** Ed25519 seed (32 bytes) and the three SLH-DSA seeds
+`SK.seed || SK.prf || PK.seed` (96 bytes).
+
+**Measured cost** on this development machine (x86-64, no SIMD paths):
+deriving the public key from seeds about 35 ms, signing about 0.6 s,
+verifying under 1 ms. Signing cost is irrelevant for a key used a few
+times a year; verification cost is what devices pay.
+
+**Evidence** (`core/crypto/tests`):
+
+- NIST ACVP vectors for SLH-DSA-SHA2-256s: all 10 key-generation tests, 2
+  deterministic signing tests, 8 verification tests (2 valid, 4 invalid by
+  content, 2 invalid by length).
+- The second implementation derives the same public key from the same
+  seeds, produces a byte-identical deterministic signature, and each
+  accepts the other's signature and rejects a changed message or context.
+- A suite-2 hybrid signature's SLH-DSA half verifies, by the second
+  implementation, against a representative rebuilt in the test.
+- Every behavioural test of the hybrid signature runs for both suites; a
+  signature never verifies under the other suite.
+- A pinned vector for suite 2. The pinned vector for suite 1 was unchanged
+  by the code changes that added suite 2.
+
 ## Not decided here
 
 | Topic | Where |
 |---|---|
-| The root suite with SLH-DSA, and how a root certifies release keys | Update-system ADR |
+| How a root certifies release keys, thresholds, rotation | Update-system ADR |
 | Hybrid key encapsulation (X25519 + ML-KEM-1024) | With the backup and transfer format, its first user |
 | The implementation used on the device | When AOSP integration starts; BoringSSL, already in AOSP, is the likely choice |
 | How release keys are held in offline hardware, and whether that hardware supports ML-DSA | Key-ceremony document, Phase 7 |
@@ -131,8 +190,10 @@ Evidence required and in place (`core/crypto/tests`):
   the strongest verification evidence available for a Rust implementation;
   no C toolchain in the host tools; a construction small enough to
   re-implement from this page, which the tests do.
-- **Negative:** sizes. A public key is 2,624 bytes and a signature 4,691
-  bytes before encoding (about 5.3 KB and 9.6 KB as files).
+- **Negative:** sizes. A suite-1 public key is 2,624 bytes and a signature
+  4,691 bytes before encoding (about 5.3 KB and 9.6 KB as files). A suite-2
+  public key is only 96 bytes, but a signature is 29,856 bytes (about
+  60 KB as a file).
 - **Negative:** the pairing is not a registered standard combination, so
   off-the-shelf composite-signature verifiers will not accept it.
 - **Risks:**

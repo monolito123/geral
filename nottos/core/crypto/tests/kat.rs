@@ -169,3 +169,112 @@ fn ml_dsa_87_verification_acvp() {
     }
     assert_eq!(accepted, 2, "two of the six vectors are valid signatures");
 }
+
+mod slh_dsa_sha2_256s_acvp {
+    //! FIPS 205 vectors, run against `fips205` the way `nott-crypto` uses
+    //! it: seeds in, the external (pure) interface for signing and
+    //! verifying.
+
+    use super::{array, bytes, load, sha256_hex};
+    use fips205::slh_dsa_sha2_256s::{PrivateKey, PublicKey, KG, N, SIG_LEN, SK_LEN};
+    use fips205::traits::{KeyGen as _, SerDes as _, Signer as _, Verifier as _};
+
+    #[test]
+    fn key_generation() {
+        let tests = load("slh-dsa-sha2-256s-keygen.txt");
+        assert_eq!(tests.len(), 10);
+        for (id, fields) in tests {
+            let (public, secret) = KG::keygen_from_seed(
+                &array::<N>(&fields, "sk-seed"),
+                &array::<N>(&fields, "sk-prf"),
+                &array::<N>(&fields, "pk-seed"),
+            );
+            assert_eq!(
+                public.into_bytes().to_vec(),
+                bytes(&fields, "pk"),
+                "test {id}"
+            );
+            assert_eq!(
+                sha256_hex(&secret.into_bytes()),
+                fields["sk-sha256"],
+                "test {id}: private key"
+            );
+        }
+    }
+
+    #[test]
+    fn deterministic_signing() {
+        let tests = load("slh-dsa-sha2-256s-siggen.txt");
+        assert_eq!(tests.len(), 2);
+        for (id, fields) in tests {
+            let secret = PrivateKey::try_from_bytes(array::<SK_LEN>(&fields, "sk"))
+                .unwrap_or_else(|_| panic!("test {id}: private key"));
+            // FIPS 205's deterministic variant draws no randomness, so the
+            // generator must never be asked.
+            let mut no_randomness = super::NoRandomness;
+            let signature = secret
+                .try_sign_with_rng(
+                    &mut no_randomness,
+                    &bytes(&fields, "message"),
+                    &bytes(&fields, "context"),
+                    false,
+                )
+                .unwrap_or_else(|_| panic!("test {id}: signing failed"));
+            assert_eq!(
+                sha256_hex(&signature),
+                fields["signature-sha256"],
+                "test {id}"
+            );
+        }
+    }
+
+    #[test]
+    fn verification() {
+        let tests = load("slh-dsa-sha2-256s-sigver.txt");
+        assert_eq!(tests.len(), 8);
+        let (mut accepted, mut wrong_length) = (0, 0);
+        for (id, fields) in tests {
+            let expected = fields["passed"] == "true";
+            if let Some(length) = fields.get("signature-length") {
+                // Too short or too long: the fixed-size interface cannot
+                // even be called, which is the rejection.
+                let length: usize = length.parse().expect("a number");
+                assert_ne!(length, SIG_LEN, "test {id}");
+                assert!(!expected);
+                wrong_length += 1;
+                continue;
+            }
+            let public = PublicKey::try_from_bytes(array(&fields, "pk"))
+                .unwrap_or_else(|_| panic!("test {id}: public key"));
+            let outcome = public.verify(
+                &bytes(&fields, "message"),
+                &array::<SIG_LEN>(&fields, "signature"),
+                &bytes(&fields, "context"),
+            );
+            assert_eq!(outcome, expected, "test {id} ({})", fields["reason"]);
+            accepted += usize::from(expected);
+        }
+        assert_eq!((accepted, wrong_length), (2, 2));
+    }
+}
+
+/// A generator that fails every request, for code paths that must not draw
+/// randomness.
+struct NoRandomness;
+
+impl rand_core::RngCore for NoRandomness {
+    fn next_u32(&mut self) -> u32 {
+        panic!("randomness requested")
+    }
+    fn next_u64(&mut self) -> u64 {
+        panic!("randomness requested")
+    }
+    fn fill_bytes(&mut self, _: &mut [u8]) {
+        panic!("randomness requested")
+    }
+    fn try_fill_bytes(&mut self, _: &mut [u8]) -> Result<(), rand_core::Error> {
+        panic!("randomness requested")
+    }
+}
+
+impl rand_core::CryptoRng for NoRandomness {}

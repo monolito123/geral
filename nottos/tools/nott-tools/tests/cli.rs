@@ -491,3 +491,68 @@ fn signed_manifest_end_to_end() {
     assert_eq!(code, 1);
     assert!(stdout.contains("FAIL system.roothash: sha256 "), "{stdout}");
 }
+
+#[test]
+fn root_suite_keys_sign_and_verify() {
+    let scratch = Scratch::new("root-suite");
+    let (secret, public) = (scratch.path("root.secret"), scratch.path("root.public"));
+    let (code, stdout, stderr) = run(&[
+        "key",
+        "generate",
+        "--suite",
+        "ed25519+slh-dsa-sha2-256s",
+        "--out-secret",
+        &secret,
+        "--out-public",
+        &public,
+    ]);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(stdout.contains("suite: ed25519+slh-dsa-sha2-256s\n"));
+    let (_, stdout, _) = run(&["key", "id", &public]);
+    assert!(stdout.starts_with("suite: ed25519+slh-dsa-sha2-256s\n"));
+
+    let message = scratch.file("root.txt", b"root metadata stand-in\n");
+    let signature = scratch.path("root.sig");
+    let (code, _, stderr) = run(&[
+        "sign",
+        &message,
+        "--key",
+        &secret,
+        "--context",
+        "root-metadata",
+        "--out",
+        &signature,
+    ]);
+    assert_eq!(code, 0, "{stderr}");
+    let verify = |context: &str| {
+        run(&[
+            "verify",
+            &message,
+            "--public-key",
+            &public,
+            "--signature",
+            &signature,
+            "--context",
+            context,
+        ])
+    };
+    let (code, stdout, _) = verify("root-metadata");
+    assert_eq!(code, 0, "{stdout}");
+    assert!(stdout.starts_with("PASS: valid ed25519+slh-dsa-sha2-256s signature"));
+    assert_eq!(verify("build-manifest").0, 1);
+
+    let (code, _, stderr) = run(&[
+        "key",
+        "generate",
+        "--suite",
+        "rsa",
+        "--out-secret",
+        &scratch.path("x.secret"),
+        "--out-public",
+        &scratch.path("x.public"),
+    ]);
+    assert_eq!(code, 2);
+    assert!(
+        stderr.contains("unknown suite `rsa`; known: ed25519+ml-dsa-87, ed25519+slh-dsa-sha2-256s")
+    );
+}
