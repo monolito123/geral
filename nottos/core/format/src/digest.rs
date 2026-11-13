@@ -5,6 +5,7 @@
 //! The hash itself comes from the `sha2` crate. Nothing here implements a
 //! cryptographic primitive.
 
+use crate::hex;
 use sha2::{Digest as _, Sha256};
 use std::fmt;
 use std::fs::File;
@@ -64,34 +65,12 @@ impl Sha256Digest {
     ///
     /// Upper-case digits are rejected so that a digest has one textual form.
     pub fn from_hex(text: &str) -> Option<Self> {
-        let text = text.as_bytes();
-        if text.len() != SHA256_LEN * 2 {
-            return None;
-        }
-        let mut bytes = [0u8; SHA256_LEN];
-        for (byte, pair) in bytes.iter_mut().zip(text.chunks_exact(2)) {
-            *byte = (hex_value(pair[0])? << 4) | hex_value(pair[1])?;
-        }
-        Some(Self(bytes))
+        hex::decode(text).map(Self)
     }
 
     /// Formats the digest as 64 lower-case hexadecimal characters.
     pub fn to_hex(&self) -> String {
-        const DIGITS: &[u8; 16] = b"0123456789abcdef";
-        let mut text = String::with_capacity(SHA256_LEN * 2);
-        for byte in self.0 {
-            text.push(DIGITS[usize::from(byte >> 4)] as char);
-            text.push(DIGITS[usize::from(byte & 0x0f)] as char);
-        }
-        text
-    }
-}
-
-fn hex_value(digit: u8) -> Option<u8> {
-    match digit {
-        b'0'..=b'9' => Some(digit - b'0'),
-        b'a'..=b'f' => Some(digit - b'a' + 10),
-        _ => None,
+        hex::encode(&self.0)
     }
 }
 

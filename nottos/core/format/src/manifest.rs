@@ -34,6 +34,7 @@
 //! the same manifest.
 
 use crate::digest::Sha256Digest;
+use crate::text::{parse_decimal, parse_digits, Lines, Problem};
 use std::fmt;
 
 /// First token of the first line.
@@ -129,6 +130,19 @@ impl fmt::Display for ManifestError {
 
 impl std::error::Error for ManifestError {}
 
+impl From<Problem> for ManifestError {
+    fn from(problem: Problem) -> Self {
+        match problem {
+            Problem::TooLarge => Self::TooLarge,
+            Problem::InvalidCharacter { line } => Self::InvalidCharacter { line },
+            Problem::MissingFinalNewline => Self::MissingFinalNewline,
+            Problem::BadHeader => Self::BadHeader,
+            Problem::UnsupportedVersion(version) => Self::UnsupportedVersion(version),
+            Problem::UnexpectedLine { line, expected } => Self::UnexpectedLine { line, expected },
+        }
+    }
+}
+
 /// One image of a release.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImageEntry {
@@ -221,51 +235,31 @@ impl BuildManifest {
 
     /// Parses the canonical text form.
     pub fn parse(text: &str) -> Result<Self, ManifestError> {
-        if text.len() > MAX_MANIFEST_BYTES {
-            return Err(ManifestError::TooLarge);
-        }
-        let mut line = 1;
-        for byte in text.bytes() {
-            if byte == b'\n' {
-                line += 1;
-            } else if !(0x20..=0x7e).contains(&byte) {
-                return Err(ManifestError::InvalidCharacter { line });
-            }
-        }
-        let body = text
-            .strip_suffix('\n')
-            .ok_or(ManifestError::MissingFinalNewline)?;
-        let mut lines = Lines::new(body);
-
-        let header = lines.next_line().unwrap_or_default();
-        let format = header
-            .strip_prefix(MAGIC)
-            .and_then(|rest| rest.strip_prefix(' '))
-            .filter(|token| parse_decimal(token).is_some())
-            .ok_or(ManifestError::BadHeader)?;
-        if format != FORMAT_VERSION.to_string() {
-            return Err(ManifestError::UnsupportedVersion(format.to_owned()));
-        }
+        let mut lines = Lines::open(text, MAX_MANIFEST_BYTES, MAGIC, FORMAT_VERSION)?;
 
         let version = lines.field(FIELD_VERSION)?;
-        check(is_token(version), lines.number(), "version")?;
+        check(is_token(version), Some(lines.number()), "version")?;
         let build_id = lines.field(FIELD_BUILD_ID)?;
-        check(is_token(build_id), lines.number(), "build-id")?;
+        check(is_token(build_id), Some(lines.number()), "build-id")?;
         let security_patch = lines.field(FIELD_SECURITY_PATCH)?;
-        check(is_date(security_patch), lines.number(), "security-patch")?;
+        check(
+            is_date(security_patch),
+            Some(lines.number()),
+            "security-patch",
+        )?;
         let target = lines.field(FIELD_TARGET)?;
-        check(is_token(target), lines.number(), "target")?;
+        check(is_token(target), Some(lines.number()), "target")?;
         let vb_key = lines.field(FIELD_VB_KEY)?;
         let verified_boot_key_sha256 =
             Sha256Digest::from_hex(vb_key).ok_or(ManifestError::BadValue {
-                line: lines.number(),
+                line: Some(lines.number()),
                 field: "verified-boot-key-sha256",
             })?;
 
         let mut images: Vec<ImageEntry> = Vec::new();
         while lines.has_more() {
             let value = lines.field(FIELD_IMAGE)?;
-            let number = lines.number();
+            let number = Some(lines.number());
             if images.len() == MAX_IMAGES {
                 return Err(ManifestError::TooManyImages);
             }
@@ -370,46 +364,6 @@ impl fmt::Display for BuildManifest {
     }
 }
 
-/// Line cursor that remembers the one-based number of the last line taken.
-struct Lines<'a> {
-    inner: std::iter::Peekable<std::str::Split<'a, char>>,
-    taken: usize,
-}
-
-impl<'a> Lines<'a> {
-    fn new(body: &'a str) -> Self {
-        Self {
-            inner: body.split('\n').peekable(),
-            taken: 0,
-        }
-    }
-
-    fn next_line(&mut self) -> Option<&'a str> {
-        let line = self.inner.next()?;
-        self.taken += 1;
-        Some(line)
-    }
-
-    fn has_more(&mut self) -> bool {
-        self.inner.peek().is_some()
-    }
-
-    /// Number of the line most recently taken.
-    fn number(&self) -> Option<usize> {
-        Some(self.taken)
-    }
-
-    /// Takes the next line and strips the expected field prefix.
-    fn field(&mut self, prefix: &'static str) -> Result<&'a str, ManifestError> {
-        let unexpected = |line| ManifestError::UnexpectedLine {
-            line,
-            expected: prefix,
-        };
-        let line = self.next_line().ok_or(unexpected(self.taken + 1))?;
-        line.strip_prefix(prefix).ok_or(unexpected(self.taken))
-    }
-}
-
 fn check(valid: bool, line: Option<usize>, field: &'static str) -> Result<(), ManifestError> {
     if valid {
         Ok(())
@@ -444,21 +398,6 @@ fn is_date(text: &str) -> bool {
         (number(0..4), number(5..7), number(8..10)),
         (Some(_), Some(1..=12), Some(1..=31))
     )
-}
-
-fn parse_digits(text: &str) -> Option<u64> {
-    if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
-    }
-    text.parse().ok()
-}
-
-/// Parses a decimal number with no sign and no leading zeros.
-fn parse_decimal(text: &str) -> Option<u64> {
-    if text.len() > 1 && text.starts_with('0') {
-        return None;
-    }
-    parse_digits(text)
 }
 
 #[cfg(test)]

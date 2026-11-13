@@ -9,7 +9,10 @@
 //! signature over the bytes therefore binds the content and nothing else.
 
 pub mod digest;
+pub mod hex;
 pub mod manifest;
+pub mod signature;
+pub mod text;
 
 pub use digest::Sha256Digest;
 pub use manifest::{BuildManifest, ImageEntry, ManifestError};

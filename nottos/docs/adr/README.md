@@ -14,6 +14,7 @@ decision, consequences.
 | [0005](0005-licensing.md) | Licensing of NottOS code | Accepted |
 | [0006](0006-build-reproducibility.md) | Build reproducibility | Accepted |
 | [0007](0007-minimal-linux-test-target.md) | Minimal Linux test target | Accepted |
+| [0008](0008-signature-suite.md) | Hybrid signature suite and formats | Accepted |
 
 ## Planned ADRs
 
@@ -22,7 +23,8 @@ their absence as a decision. Numbers are assigned when the ADR is written.
 
 | Topic | Phase | Why it needs its own ADR |
 |---|---|---|
-| Cryptographic suite and formats | 2 | Hybrid constructions, algorithm identifiers, crypto-agility |
+| Root suite and key certification | 2 | SLH-DSA for roots; how a root certifies release keys (with the update system) |
+| Hybrid key encapsulation | 5 | X25519 with ML-KEM-1024, decided with the backup and transfer format |
 | Storage key hierarchy | 2 | Key classes, evict-on-lock, KDF parameters, inline engine vs. per-file keys |
 | Update system | 2 | Signing, delta format, anti-rollback, transparency log |
 | Kernel hardening profile | 2 | Interface-neutral vs. interface-changing options per tier |
