@@ -639,10 +639,12 @@ dependencies = [
 name = "nott-tools"
 version = "0.1.0"
 dependencies = [
+ "nott-crypto",
  "nott-format",
  "nott-policy",
  "serde_json",
  "toml",
+ "zeroize",
 ]
 
 [[package]]

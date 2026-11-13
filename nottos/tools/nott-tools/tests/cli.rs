@@ -288,3 +288,206 @@ fn usage_and_unknown_commands() {
     assert_eq!(code, 2);
     assert!(stderr.contains("expected 2 positional argument(s), got 1"));
 }
+
+#[test]
+fn signed_manifest_end_to_end() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let scratch = Scratch::new("signed");
+    let system = scratch.file("images/system.img", b"system contents");
+    let roothash = scratch.file("images/system.roothash", b"0123\n");
+    let images = scratch.path("images");
+    let manifest = scratch.path("manifest.txt");
+    let signature = scratch.path("manifest.sig");
+    let (secret, public) = (
+        scratch.path("release.secret"),
+        scratch.path("release.public"),
+    );
+    let (other_secret, other_public) = (scratch.path("other.secret"), scratch.path("other.public"));
+
+    // Keys.
+    let (code, stdout, stderr) = run(&[
+        "key",
+        "generate",
+        "--out-secret",
+        &secret,
+        "--out-public",
+        &public,
+    ]);
+    assert_eq!(code, 0, "{stderr}");
+    let key_id = stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("key-id: "))
+        .expect("key id printed")
+        .to_owned();
+    assert_eq!(key_id.len(), 64);
+    let mode = fs::metadata(&secret)
+        .expect("secret exists")
+        .permissions()
+        .mode();
+    assert_eq!(
+        mode & 0o777,
+        0o600,
+        "secret key must be private to its owner"
+    );
+    let (code, stdout, _) = run(&["key", "id", &public]);
+    assert_eq!(code, 0);
+    assert_eq!(
+        stdout,
+        format!("suite: ed25519+ml-dsa-87\nkey-id: {key_id}\n")
+    );
+    // An existing secret key is never overwritten.
+    let (code, _, stderr) = run(&[
+        "key",
+        "generate",
+        "--out-secret",
+        &secret,
+        "--out-public",
+        &public,
+    ]);
+    assert_eq!(code, 2);
+    assert!(stderr.contains("release.secret"), "{stderr}");
+    let (code, ..) = run(&[
+        "key",
+        "generate",
+        "--out-secret",
+        &other_secret,
+        "--out-public",
+        &other_public,
+    ]);
+    assert_eq!(code, 0);
+
+    // Manifest and signature.
+    let (code, ..) = run(&[
+        "manifest",
+        "create",
+        "--version",
+        "0.1.0",
+        "--build-id",
+        "TEST.1",
+        "--security-patch",
+        "2026-11-05",
+        "--target",
+        "test",
+        "--vb-key",
+        &public,
+        "--image",
+        &format!("system.img={system}"),
+        "--image",
+        &format!("system.roothash={roothash}"),
+        "--out",
+        &manifest,
+    ]);
+    assert_eq!(code, 0);
+    let sign = |key: &str, context: &str, out: &str| {
+        run(&[
+            "sign",
+            &manifest,
+            "--key",
+            key,
+            "--context",
+            context,
+            "--out",
+            out,
+        ])
+    };
+    let (code, stdout, stderr) = sign(&secret, "build-manifest", &signature);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(stdout.contains(&format!("key-id: {key_id}")));
+
+    let verify = |key: &str, signature: &str, extra: &[&str]| {
+        let mut arguments = vec![
+            "manifest",
+            "verify",
+            &manifest,
+            "--dir",
+            &images,
+            "--public-key",
+            key,
+            "--signature",
+            signature,
+        ];
+        arguments.extend_from_slice(extra);
+        run(&arguments)
+    };
+
+    // Authentic and intact.
+    let (code, stdout, _) = verify(&public, &signature, &["--vb-key", &public]);
+    assert_eq!(code, 0, "{stdout}");
+    assert!(stdout.starts_with(&format!("ok   signature by key {key_id}\n")));
+    assert!(stdout.ends_with("PASS: every listed item matches the manifest\n"));
+
+    // A subset, as an early boot stage checks it.
+    let (code, stdout, _) = verify(&public, &signature, &["--only", "system.roothash"]);
+    assert_eq!(code, 0);
+    assert!(stdout.ends_with("PASS: 1 of 2 listed items checked, all match\n"));
+    assert!(!stdout.contains("system.img"));
+
+    // The generic verify command agrees.
+    let generic = |context: &str| {
+        run(&[
+            "verify",
+            &manifest,
+            "--public-key",
+            &public,
+            "--signature",
+            &signature,
+            "--context",
+            context,
+        ])
+    };
+    assert_eq!(generic("build-manifest").0, 0);
+    let (code, stdout, _) = generic("update-metadata");
+    assert_eq!(code, 1);
+    assert_eq!(stdout, "FAIL: signature was made for a different purpose\n");
+
+    // Signed by a key other than the trusted one.
+    let other_signature = scratch.path("other.sig");
+    assert_eq!(sign(&other_secret, "build-manifest", &other_signature).0, 0);
+    let (code, stdout, _) = verify(&public, &other_signature, &[]);
+    assert_eq!(code, 1);
+    assert_eq!(
+        stdout,
+        "FAIL signature: signature was made by a different key\n\
+         FAIL: the manifest is not authentic\n"
+    );
+
+    // Signed by the right key for another purpose.
+    let wrong_purpose = scratch.path("purpose.sig");
+    assert_eq!(sign(&secret, "update-metadata", &wrong_purpose).0, 0);
+    let (code, stdout, _) = verify(&public, &wrong_purpose, &[]);
+    assert_eq!(code, 1);
+    assert!(stdout.starts_with("FAIL signature: signature was made for a different purpose\n"));
+
+    // Only one of the two options.
+    let (code, _, stderr) = run(&[
+        "manifest",
+        "verify",
+        &manifest,
+        "--dir",
+        &images,
+        "--public-key",
+        &public,
+    ]);
+    assert_eq!(code, 2);
+    assert!(stderr.contains("--public-key and --signature go together"));
+
+    // The manifest is edited after signing: still canonical, no longer
+    // authentic. Its content is not reported.
+    let original = fs::read_to_string(&manifest).expect("manifest readable");
+    fs::write(&manifest, original.replace("TEST.1", "TEST.2")).expect("edit");
+    let (code, stdout, _) = verify(&public, &signature, &[]);
+    assert_eq!(code, 1);
+    assert_eq!(
+        stdout,
+        "FAIL signature: signature is not valid for this key and message\n\
+         FAIL: the manifest is not authentic\n"
+    );
+
+    // An image changes after signing: authentic manifest, mismatching image.
+    fs::write(&manifest, original).expect("restore");
+    fs::write(&roothash, b"9999\n").expect("tamper");
+    let (code, stdout, _) = verify(&public, &signature, &["--only", "system.roothash"]);
+    assert_eq!(code, 1);
+    assert!(stdout.contains("FAIL system.roothash: sha256 "), "{stdout}");
+}

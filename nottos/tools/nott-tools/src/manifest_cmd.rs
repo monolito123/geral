@@ -3,8 +3,10 @@
 //! `manifest create` and `manifest verify`.
 
 use crate::args::Args;
+use crate::sign_cmd::{load_public_key, load_signature};
 use crate::util::{read_text, write_text};
 use crate::{CommandResult, Outcome};
+use nott_crypto::context;
 use nott_format::manifest::MAX_MANIFEST_BYTES;
 use nott_format::{BuildManifest, ImageEntry, Sha256Digest};
 use std::path::Path;
@@ -64,25 +66,51 @@ pub(crate) fn create(raw: &[&str]) -> CommandResult {
 }
 
 pub(crate) fn verify(raw: &[&str]) -> CommandResult {
-    let args = Args::parse(raw, &["dir", "vb-key"])?;
+    let args = Args::parse(raw, &["dir", "vb-key", "only", "public-key", "signature"])?;
     let [manifest_path] = args.positionals()?;
-    let manifest = load(Path::new(manifest_path))?;
-    let dir = Path::new(args.required("dir")?);
+    let text = read_text(Path::new(manifest_path), MAX_MANIFEST_BYTES as u64)?;
+    let mut report = String::new();
 
-    let mut report = format!(
+    // Authenticity first: an unauthentic manifest is not interpreted.
+    match (args.optional("public-key")?, args.optional("signature")?) {
+        (Some(key_path), Some(signature_path)) => {
+            let public = load_public_key(key_path)?;
+            let signature = load_signature(signature_path)?;
+            if let Err(error) = nott_crypto::verify(
+                &public,
+                context::BUILD_MANIFEST,
+                text.as_bytes(),
+                &signature,
+            ) {
+                return Ok(Outcome::Fail(format!(
+                    "FAIL signature: {error}\nFAIL: the manifest is not authentic\n"
+                )));
+            }
+            report.push_str(&format!("ok   signature by key {}\n", public.key_id()));
+        }
+        (None, None) => report.push_str("note: signature not checked\n"),
+        _ => return Err("--public-key and --signature go together".to_owned()),
+    }
+
+    let manifest =
+        BuildManifest::parse(&text).map_err(|error| format!("{manifest_path}: {error}"))?;
+    let dir = Path::new(args.required("dir")?);
+    let selected = selected_images(&manifest, args.optional("only")?)?;
+
+    report.push_str(&format!(
         "manifest: version {} build {} patch {} target {}\n",
         manifest.version(),
         manifest.build_id(),
         manifest.security_patch(),
         manifest.target()
-    );
+    ));
     let mut failures = 0usize;
     let mut fail = |report: &mut String, what: &str, why: String| {
         failures += 1;
         report.push_str(&format!("FAIL {what}: {why}\n"));
     };
 
-    for image in manifest.images() {
+    for image in &selected {
         match Sha256Digest::of_file(&dir.join(image.name())) {
             Err(error) => fail(&mut report, image.name(), error.to_string()),
             Ok((_, size)) if size != image.size() => fail(
@@ -115,10 +143,86 @@ pub(crate) fn verify(raw: &[&str]) -> CommandResult {
     }
 
     if failures == 0 {
-        report.push_str("PASS: every listed item matches the manifest\n");
+        let scope = if selected.len() == manifest.images().len() {
+            "every listed item matches the manifest".to_owned()
+        } else {
+            format!(
+                "{} of {} listed items checked, all match",
+                selected.len(),
+                manifest.images().len()
+            )
+        };
+        report.push_str(&format!("PASS: {scope}\n"));
         Ok(Outcome::Pass(report))
     } else {
         report.push_str(&format!("FAIL: {failures} item(s) do not match\n"));
         Ok(Outcome::Fail(report))
+    }
+}
+
+/// The images to check: all of them, or the ones named in `--only`. Every
+/// name must be in the manifest and may appear once.
+fn selected_images<'a>(
+    manifest: &'a BuildManifest,
+    only: Option<&str>,
+) -> Result<Vec<&'a ImageEntry>, String> {
+    let Some(only) = only else {
+        return Ok(manifest.images().iter().collect());
+    };
+    let mut selected: Vec<&ImageEntry> = Vec::new();
+    for name in only.split(',') {
+        let image = manifest
+            .image(name)
+            .ok_or_else(|| format!("--only: image `{name}` is not in the manifest"))?;
+        if selected.iter().any(|chosen| chosen.name() == name) {
+            return Err(format!("--only: image `{name}` named more than once"));
+        }
+        selected.push(image);
+    }
+    Ok(selected)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn manifest() -> BuildManifest {
+        let digest = Sha256Digest::of_bytes(b"");
+        let images = ["boot", "system", "vendor"]
+            .iter()
+            .map(|name| ImageEntry::new(name, 1, digest).expect("valid"))
+            .collect();
+        BuildManifest::new("1", "b", "2026-11-13", "t", digest, images).expect("valid")
+    }
+
+    fn names(images: Vec<&ImageEntry>) -> Vec<&str> {
+        images.into_iter().map(ImageEntry::name).collect()
+    }
+
+    #[test]
+    fn selects_all_or_the_named_images() {
+        let manifest = manifest();
+        assert_eq!(
+            selected_images(&manifest, None).map(names),
+            Ok(vec!["boot", "system", "vendor"])
+        );
+        assert_eq!(
+            selected_images(&manifest, Some("vendor,boot")).map(names),
+            Ok(vec!["vendor", "boot"])
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_and_repeated_names() {
+        let manifest = manifest();
+        assert_eq!(
+            selected_images(&manifest, Some("boot,missing")).map(names),
+            Err("--only: image `missing` is not in the manifest".to_owned())
+        );
+        assert_eq!(
+            selected_images(&manifest, Some("boot,boot")).map(names),
+            Err("--only: image `boot` named more than once".to_owned())
+        );
+        assert!(selected_images(&manifest, Some("")).is_err());
     }
 }

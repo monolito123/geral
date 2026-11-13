@@ -9,6 +9,7 @@ mod args;
 mod manifest_cmd;
 mod repro;
 mod sbom;
+mod sign_cmd;
 mod size;
 mod storage;
 mod tier_cmd;
@@ -30,9 +31,14 @@ pub(crate) type CommandResult = Result<Outcome, String>;
 const USAGE: &str = "\
 usage: nott-tools <command>
 
+  key generate --out-secret FILE --out-public FILE
+  key id PUBLIC_KEY
+  sign FILE --key SECRET_KEY --context NAME --out SIGNATURE
+  verify FILE --public-key FILE --signature FILE --context NAME
   manifest create --version V --build-id ID --security-patch YYYY-MM-DD
                   --target T --vb-key FILE --image NAME=FILE... --out FILE
-  manifest verify MANIFEST --dir DIR [--vb-key FILE]
+  manifest verify MANIFEST --dir DIR [--vb-key FILE] [--only NAME[,NAME...]]
+                  [--public-key FILE --signature FILE]
   repro compare DIR_A DIR_B
   size check MANIFEST --budget-bytes N --images NAME[,NAME...]
   sbom --metadata FILE --lock FILE --created YYYY-MM-DDThh:mm:ssZ
@@ -73,6 +79,10 @@ fn main() -> ExitCode {
 
 fn run(words: &[&str]) -> CommandResult {
     match words {
+        ["key", "generate", rest @ ..] => sign_cmd::key_generate(rest),
+        ["key", "id", rest @ ..] => sign_cmd::key_id(rest),
+        ["sign", rest @ ..] => sign_cmd::sign(rest),
+        ["verify", rest @ ..] => sign_cmd::verify(rest),
         ["manifest", "create", rest @ ..] => manifest_cmd::create(rest),
         ["manifest", "verify", rest @ ..] => manifest_cmd::verify(rest),
         ["repro", "compare", rest @ ..] => repro::compare(rest),
