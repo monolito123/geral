@@ -22,7 +22,7 @@ stays within regulatory limits.
 |---|---|
 | 0 — Architecture | Approved by the owner on 2026-11-12 |
 | 1 — Build system and emulator target | **Host side done; emulator side blocked.** Host tools, CI and a minimal Linux test target exist and are tested. No Android system image has been built: that needs an AOSP build host the project does not have. None of the Phase 1 acceptance criteria is met yet. See [docs/reports/phase-1.md](docs/reports/phase-1.md). |
-| 2 — Core security | **In progress, host side.** Hybrid signatures and key encapsulation, update verification, the integrity folder and a kernel hardening checker are built and tested; signed boot metadata runs on the test target. One acceptance criterion is met (2.10). See [docs/reports/phase-2-progress.md](docs/reports/phase-2-progress.md). |
+| 2 — Core security | **In progress, host side.** Hybrid signatures and key encapsulation, update verification, backup encryption, the integrity folder and a kernel hardening checker are built and tested; signed boot metadata runs on the test target. One acceptance criterion is met (2.10). See [docs/reports/phase-2-progress.md](docs/reports/phase-2-progress.md). |
 | 3 to 7 | Not started |
 
 Every performance number in this repository is still a *proposed target*,

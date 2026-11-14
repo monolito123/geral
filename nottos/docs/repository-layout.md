@@ -4,9 +4,10 @@
 - **Date:** 2026-11-12
 
 Directories are created when their first real content lands, not before; no
-placeholder files. Existing today: `docs/`, `core/format`, `core/policy`,
-`tools/nott-tools`, `device/cuttlefish`, `tests/mini`, the `nott` entry
-point, and the CI workflow in the repository's `.github/workflows/`.
+placeholder files. Existing today: `docs/`, `core/backup`, `core/crypto`,
+`core/format`, `core/policy`, `core/update`, `kernel/` (the hardening
+profile), `tools/nott-tools`, `device/cuttlefish`, `tests/mini`, the `nott`
+entry point, and the CI workflow in the repository's `.github/workflows/`.
 
 ## 1. How an AOSP derivative is organised
 
@@ -46,9 +47,11 @@ nottos/
   build/                   `nott` entry point; reproducibility check;
                            SBOM generation; signing (test keys only)
   core/                    Rust workspace: shared libraries
+    backup/                backup encryption (ADR-0013)
     crypto/                suite registry, hybrid composition
     format/                versioned containers and manifests
     policy/                lock-state and device-capability models
+    update/                update verification (ADR-0009)
   daemons/                 Rust system daemons
     seald/  updated/  verifyd/  ramd/  beacond/
   platform/                deviation registry: every change to an AOSP

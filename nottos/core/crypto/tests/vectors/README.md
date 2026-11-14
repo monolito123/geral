@@ -39,3 +39,18 @@ public domain. Ed25519 vectors from RFC 8032, section 7.1, and X25519
 vectors from RFC 7748, sections 5.2 and 6.1, are written out in the test
 source. The RFC 7748 text used has SHA-256
 `279ca0ecc5e92e2962e27b846986aeb74729d9dd34bd4a04a362f80dcb596ad3`.
+
+ChaCha20-Poly1305 vectors (RFC 8439, section 2.8.2 and appendix A.5) and
+Argon2id vectors (RFC 9106, section 5.3) are written out in
+`tests/aead.rs` and `tests/password.rs`; the hexadecimal dumps were
+extracted from the RFC text by a script, not retyped. The Argon2id cases
+of the reference implementation come from `src/test.c` of
+<https://github.com/P-H-C/phc-winner-argon2> at commit
+`f57e61e19229e23c4445b85494dbf7c07de721cb`, identical to the default
+branch on 2026-11-14. SHA-256 of the texts used:
+
+```text
+25bef70fbf7a07ff45c2fe4cb7c6ce954eac687413d8610603268b4e4415324c  rfc8439.txt
+855c06f060379e34285e83a217e9069b5c72e161a1e54df9af5cd88dbb231f31  rfc9106.txt
+ec518844e823fb6a1bd38f79f2b5d1bbddf23f490c0a343c450aa8e3f5af5988  phc-winner-argon2 src/test.c
+```

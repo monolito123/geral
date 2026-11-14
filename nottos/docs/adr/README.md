@@ -19,6 +19,7 @@ decision, consequences.
 | [0010](0010-integrity-folder.md) | Integrity folder | Accepted |
 | [0011](0011-kernel-hardening-profile.md) | Kernel hardening profile | Accepted as a proposal |
 | [0012](0012-hybrid-key-encapsulation.md) | Hybrid key encapsulation | Accepted |
+| [0013](0013-backup-format.md) | Backup encryption format | Accepted |
 
 ## Planned ADRs
 
@@ -39,7 +40,7 @@ their absence as a decision. Numbers are assigned when the ADR is written.
 | Keyboard, text-to-speech, eSIM manager | 5 | Component choices and licences |
 | Lost-device protocol | 5 | Relay, command signing, the exception in the seal |
 | Factory-reset protection | 5 | Owner-bound protection without a Google account |
-| Backup and transfer format | 5 | Hybrid wrapping, recovery passphrase |
+| Device-to-device transfer | 5 | Ephemeral hybrid exchange, authentication by a code compared on both screens; backups are ADR-0013 |
 | Run-from-RAM design | 6 | Pinning vs. RAM-backed image, verification model, per-class budgets |
 | Certification track | 7 | Compatibility gap list, hardware partner prerequisites |
 

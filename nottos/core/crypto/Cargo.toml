@@ -1,6 +1,6 @@
 [package]
 name = "nott-crypto"
-description = "NottOS hybrid signatures: Ed25519 with ML-DSA-87, composed from existing implementations"
+description = "NottOS cryptography: hybrid signatures and key encapsulation, authenticated encryption and passphrase stretching, composed from existing implementations"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,8 +9,10 @@ publish.workspace = true
 
 [dependencies]
 nott-format.workspace = true
+argon2.workspace = true
 getrandom.workspace = true
 fips205.workspace = true
+libcrux-chacha20poly1305.workspace = true
 libcrux-curve25519.workspace = true
 libcrux-ed25519.workspace = true
 libcrux-ml-dsa.workspace = true
@@ -21,11 +23,12 @@ sha3.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
-# Second, independent implementations of ML-DSA and SLH-DSA, used only to
-# cross-check the first ones in tests. They are never linked into anything
-# that ships.
+# Second, independent implementations, used only to cross-check the first
+# ones in tests. They are never linked into anything that ships.
+chacha20poly1305.workspace = true
 ml-dsa.workspace = true
 ml-kem.workspace = true
+second-argon2.workspace = true
 slh-dsa.workspace = true
 x25519-dalek.workspace = true
 

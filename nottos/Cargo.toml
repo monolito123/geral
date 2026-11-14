@@ -1,6 +1,13 @@
 [workspace]
 resolver = "2"
-members = ["core/crypto", "core/format", "core/policy", "core/update", "tools/nott-tools"]
+members = [
+    "core/backup",
+    "core/crypto",
+    "core/format",
+    "core/policy",
+    "core/update",
+    "tools/nott-tools",
+]
 
 [workspace.package]
 version = "0.1.0"
@@ -10,18 +17,21 @@ license = "Apache-2.0"
 publish = false
 
 [workspace.dependencies]
+nott-backup = { path = "core/backup" }
 nott-crypto = { path = "core/crypto" }
 nott-format = { path = "core/format" }
 nott-policy = { path = "core/policy" }
 nott-update = { path = "core/update" }
 getrandom = "0.4.3"
 # Cryptographic implementations are pinned to exact versions
-# (docs/adr/0008-signature-suite.md).
+# (docs/adr/0008-signature-suite.md, 0012 and 0013).
 libcrux-ed25519 = { version = "=0.0.10", default-features = false }
 libcrux-ml-dsa = { version = "=0.0.11", default-features = false, features = ["std", "mldsa87"] }
 fips205 = { version = "=0.5.0", default-features = false, features = ["slh-dsa-sha2-256s"] }
 libcrux-curve25519 = "=0.0.9"
 libcrux-ml-kem = { version = "=0.0.11", default-features = false, features = ["std", "mlkem1024"] }
+libcrux-chacha20poly1305 = "=0.0.10"
+argon2 = { version = "=0.6.0", default-features = false, features = ["alloc", "zeroize"] }
 sha3 = "0.10.8"
 # The random-number interface fips205 expects.
 rand_core = "0.6.4"
@@ -30,6 +40,8 @@ ml-dsa = "=0.1.2"
 ml-kem = "=0.3.4"
 slh-dsa = "=0.1.0"
 x25519-dalek = { version = "=3.0.0", features = ["static_secrets"] }
+chacha20poly1305 = "=0.10.1"
+second-argon2 = { package = "rust-argon2", version = "=3.0.0", default-features = false }
 serde = { version = "1.0.200", features = ["derive"] }
 serde_json = "1.0.120"
 sha2 = "0.10.8"

@@ -875,3 +875,123 @@ fn kernel_check_reports_every_rule() {
     assert_eq!(code, 1, "{stderr}");
     assert!(stdout.contains("MISSING CONFIG_CFI_CLANG (required)"));
 }
+
+#[test]
+fn backup_end_to_end() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let scratch = Scratch::new("backup");
+    let secret = scratch.file("recovery.txt", b"correct horse battery staple\n");
+    let wrong = scratch.file("wrong.txt", b"correct horse battery staple!\n");
+    let mut contents = vec![0u8; 200_000];
+    for (index, byte) in contents.iter_mut().enumerate() {
+        *byte = (index % 251) as u8;
+    }
+    let input = scratch.file("data.bin", &contents);
+    let key = scratch.path("backup.key");
+    let backup = scratch.path("data.backup");
+    let restored = scratch.path("restored.bin");
+
+    let cheapest = ["--memory-kib", "65536", "--iterations", "3", "--lanes", "4"];
+    let mut create = vec![
+        "backup",
+        "key-create",
+        "--secret-file",
+        &secret,
+        "--out",
+        &key,
+    ];
+    create.extend_from_slice(&cheapest);
+    let (code, stdout, _) = run(&create);
+    assert_eq!(code, 0, "{stdout}");
+    assert!(stdout.contains("kdf: argon2id 65536 3 4 "), "{stdout}");
+    let mode = fs::metadata(&key).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600, "the backup key is secret");
+    // An existing key is never overwritten.
+    assert_eq!(run(&create).0, 2);
+
+    let encrypt = [
+        "backup",
+        "encrypt",
+        &input,
+        "--key",
+        &key,
+        "--created",
+        "2026-11-14T08:00:00Z",
+        "--out",
+        &backup,
+    ];
+    let (code, stdout, _) = run(&encrypt);
+    assert_eq!(code, 0, "{stdout}");
+    assert!(stdout.contains("200000 byte(s)"), "{stdout}");
+
+    // The wrong secret is refused and leaves nothing behind.
+    let (code, stdout, _) = run(&[
+        "backup",
+        "decrypt",
+        &backup,
+        "--secret-file",
+        &wrong,
+        "--out",
+        &restored,
+    ]);
+    assert_eq!(code, 1, "{stdout}");
+    assert!(stdout.contains("does not open this backup"), "{stdout}");
+    assert!(!Path::new(&restored).exists());
+
+    let decrypt = [
+        "backup",
+        "decrypt",
+        &backup,
+        "--secret-file",
+        &secret,
+        "--out",
+        &restored,
+    ];
+    let (code, stdout, _) = run(&decrypt);
+    assert_eq!(code, 0, "{stdout}");
+    assert!(stdout.contains("created: 2026-11-14T08:00:00Z"), "{stdout}");
+    assert_eq!(fs::read(&restored).unwrap(), contents);
+    // An existing output is never overwritten.
+    assert_eq!(run(&decrypt).0, 2);
+
+    // A damaged last chunk: refused, and no partial plaintext is left.
+    let mut damaged = fs::read(&backup).unwrap();
+    let last = damaged.len() - 1;
+    damaged[last] ^= 1;
+    let damaged = scratch.file("damaged.backup", &damaged);
+    let restored_damaged = scratch.path("damaged.bin");
+    let (code, stdout, _) = run(&[
+        "backup",
+        "decrypt",
+        &damaged,
+        "--secret-file",
+        &secret,
+        "--out",
+        &restored_damaged,
+    ]);
+    assert_eq!(code, 1, "{stdout}");
+    assert!(
+        stdout.contains("chunk 3 of the payload is not authentic"),
+        "{stdout}"
+    );
+    assert!(!Path::new(&restored_damaged).exists());
+    assert!(!Path::new(&format!("{restored_damaged}.partial")).exists());
+
+    // Parameters below the limits are refused before any work.
+    let weak_key = scratch.path("weak.key");
+    let (code, stdout, _) = run(&[
+        "backup",
+        "key-create",
+        "--secret-file",
+        &secret,
+        "--memory-kib",
+        "65536",
+        "--iterations",
+        "2",
+        "--out",
+        &weak_key,
+    ]);
+    assert_eq!(code, 1, "{stdout}");
+    assert!(stdout.contains("outside the accepted limits"), "{stdout}");
+    assert!(!Path::new(&weak_key).exists());
+}

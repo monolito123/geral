@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! NottOS hybrid signatures.
+//! NottOS cryptography.
+//!
+//! The crate root holds the hybrid signatures. The modules hold hybrid key
+//! encapsulation ([`kem`], ADR-0012), authenticated encryption ([`aead`]),
+//! passphrase stretching ([`password`]) and the hash functions used for key
+//! derivation ([`hash`]); ADR-0013 records why the second and third were
+//! chosen.
 //!
 //! A hybrid signature combines a classical algorithm with a post-quantum
 //! one and is valid only if **both** component signatures are. Forging one
@@ -34,7 +40,10 @@
 //! verify for another, and a signature made under one suite does not verify
 //! under another.
 
+pub mod aead;
+pub mod hash;
 pub mod kem;
+pub mod password;
 mod rng;
 mod secret;
 
@@ -47,6 +56,7 @@ use libcrux_ml_dsa::ml_dsa_87::{self, MLDSA87Signature, MLDSA87VerificationKey};
 use nott_format::signature::is_context;
 use sha2::{Digest as _, Sha512};
 use std::fmt;
+use zeroize::Zeroizing;
 
 /// Purposes a signature can be made for. Each protocol uses its own.
 pub mod context {
@@ -93,6 +103,14 @@ impl fmt::Display for CryptoError {
 }
 
 impl std::error::Error for CryptoError {}
+
+/// `N` bytes from the operating system's random-number generator, wiped
+/// when dropped.
+pub fn random_bytes<const N: usize>() -> Result<Zeroizing<[u8; N]>, CryptoError> {
+    let mut bytes = Zeroizing::new([0u8; N]);
+    getrandom::fill(&mut bytes[..]).map_err(|_| CryptoError::Randomness)?;
+    Ok(bytes)
+}
 
 /// Why a signature was not accepted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

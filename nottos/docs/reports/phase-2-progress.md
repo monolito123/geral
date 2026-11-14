@@ -20,10 +20,16 @@
 | Host tool commands | `key generate --suite`, `key id`, `sign`, `verify`, `sigset`, `update root-create`, `update metadata-create`, `update verify`; `manifest verify` with signature and `--only` | `tools/nott-tools` |
 | Signed boot on the test target | The boot image carries only the release public key; stage 1 accepts a dm-verity root hash only from a signed build manifest | `tests/mini` |
 | SBOM correction | The SBOM now lists exactly what the build compiles | `nott`, `tools/nott-tools/src/sbom.rs` |
+| Authenticated encryption and passphrase stretching | ChaCha20-Poly1305 and Argon2id behind `nott-crypto` | `core/crypto/src/aead.rs`, `password.rs`, ADR-0013 |
+| Backup encryption | A byte stream encrypted to a recovery key derived from the recovery secret; random 256-bit data key wrapped with the hybrid KEM; header and every chunk authenticated; the device can make backups but not read them | `core/backup`, `core/format/src/backup.rs`, ADR-0013 |
+| Host tool commands | `backup key-create`, `backup encrypt`, `backup decrypt` | `tools/nott-tools` |
 
 Implementations used, all pinned to exact versions: `libcrux-ed25519`
-0.0.10, `libcrux-ml-dsa` 0.0.11, `fips205` 0.5.0. Second implementations,
-in tests only: RustCrypto `ml-dsa` 0.1.2 and `slh-dsa` 0.1.0.
+0.0.10, `libcrux-ml-dsa` 0.0.11, `fips205` 0.5.0, `libcrux-ml-kem` 0.0.11,
+`libcrux-curve25519` 0.0.9, `libcrux-chacha20poly1305` 0.0.10, `argon2`
+0.6.0. Second implementations, in tests only: RustCrypto `ml-dsa` 0.1.2,
+`slh-dsa` 0.1.0, `ml-kem` 0.3.4, `chacha20poly1305` 0.10.1, `x25519-dalek`
+3.0.0 and `rust-argon2` 3.0.0.
 
 ## 2. What was verified, and how
 
@@ -33,7 +39,7 @@ workflow).
 
 | # | Claim | How it was checked | Result |
 |---|---|---|---|
-| V1 | The code is tested | `./nott check`: 128 tests | Pass |
+| V1 | The code is tested | `./nott check`: 128 tests when first written, 184 now | Pass |
 | V2 | Ed25519 is called correctly | RFC 8032 section 7.1, tests 1 to 3 | Pass |
 | V3 | ML-DSA-87 is called correctly | NIST ACVP: 25 key generation, 2 deterministic signing, 6 verification (2 valid, 4 invalid) | Pass |
 | V4 | SLH-DSA-SHA2-256s is called correctly | NIST ACVP: 10 key generation, 2 deterministic signing, 8 verification (2 valid, 4 invalid by content, 2 by length) | Pass |
@@ -46,7 +52,11 @@ workflow).
 | V11 | Those tests can fail | Each check in the verifier was broken once on purpose (11 changes) | 10 caught at once. One missing test was found and added (a root skipping a version). One check was redundant (manifest size, already decided by the digest) and was removed. |
 | V12 | The test target refuses unauthentic boot metadata | Boot tests T4a (untrusted key), T4b (manifest edited after signing), T4c (root hash replaced): stage 1 refuses each, with the reason in the log | Pass, here and in CI |
 | V13 | Builds stay reproducible | `./nott repro`, here and on GitHub runners | Identical across paths and Cargo homes. Identical between this machine and a GitHub runner for commit `7ce3ae9` (before the cryptography crates) and for commit `54832f7` (with them): `10e4864a32c1df9a095435911f9b2ae1c333a24ad7248a9c72165a2840f69369`. |
-| V14 | The SBOM is exact | Compared with Cargo's own list of compiled packages; SPDX 2.3 schema | Identical (55 packages); valid |
+| V14 | The SBOM is exact | Compared with Cargo's own list of compiled packages; SPDX 2.3 schema | Identical (55 packages when first written, 70 now); valid |
+| V15 | ChaCha20-Poly1305 and Argon2id are called correctly | RFC 8439 (2.8.2, A.5); RFC 9106 (5.3); the eight Argon2id cases of the reference implementation; agreement with RustCrypto `chacha20poly1305` and `rust-argon2` | Pass |
+| V16 | The backup construction is what ADR-0013 says | A backup made by `nott-backup` is opened by a test that rebuilds every step from the ADR with the second implementations only | Pass |
+| V17 | Backups stop the attacks they are for | 17 tests: a backup made with the public parts but not the authentication key; every header byte changed; cut, extended, reordered, dropped and foreign chunks; an empty final chunk; wrong secret; cost limits | Pass |
+| V18 | Those tests can fail | Each of 20 checks and derivation inputs broken once on purpose | 19 caught at once; the memory minimum was masked by the work minimum, so a test was added |
 
 Measured on this machine (x86-64, no SIMD paths): SLH-DSA-SHA2-256s
 public-key derivation about 35 ms, signing about 0.6 s, verification under
@@ -82,6 +92,11 @@ public-key derivation about 35 ms, signing about 0.6 s, verification under
   rollback index, and the downloader that must honour `manifest-size`.
 - Release signing in offline hardware, and whether such hardware supports
   ML-DSA and SLH-DSA.
+- How long Argon2id takes on a phone. The default (512 MiB, three passes)
+  took 1.76 s on this machine; nothing was measured on a device.
+- That a recovery passphrase typed on two devices gives the same bytes:
+  Unicode normalisation belongs to the setup and restore screens, which do
+  not exist.
 
 ## 5. Corrections to earlier work
 
@@ -104,6 +119,8 @@ public-key derivation about 35 ms, signing about 0.6 s, verification under
 | No timestamp role: the freeze window equals the update metadata lifetime | 30 days proposed; a timestamp role can be added without changing existing documents (ADR-0009) |
 | Fast-forward by an attacker holding a threshold of release keys | Threshold signing; on-device reset rule still to be designed (ADR-0009) |
 | Test time grows with hash-based signatures | Signatures made once per test run and shared; whole suite about 20 s |
+| The backup key schedule is NottOS's own, built from standard parts | Written construction, independent recomputation in tests, mutation testing, planned audit (ADR-0013) |
+| Replay of an old backup to a new device | The creation time is authenticated and shown; a new device has no state to do more (ADR-0013) |
 
 ## 7. Owner actions that block progress
 
@@ -133,12 +150,22 @@ outreach with a candidate Tier A device.
   combiner input and check removed once on purpose, each removal caught.
   This completes criterion 2.10.
 
+- **Backup encryption** (ADR-0013). The age format was the first
+  candidate. Its post-quantum recipient uses ML-KEM-768, its file key is
+  128 bits, and its recipients are not authenticated, so anyone holding the
+  public key could make a backup the owner's device would restore. NottOS
+  keeps age's payload layout and adds its own key schedule: the recovery
+  keys come from the recovery secret through Argon2id, and the data key is
+  wrapped under a key that needs both the hybrid KEM secret and an
+  authentication key the device holds. Host analogue of Phase 5 criterion
+  5.10: restoring on another machine needs only the recovery secret, and a
+  damaged wrapper is refused.
+
 ## 9. Next steps that need none of those
 
-1. **Backup format**: hybrid wrapping of a random data key, authenticated
-   encryption of the backup, recovery passphrase with a memory-hard KDF.
-   First user of ADR-0012.
-2. **Locked-state network seal on the test target** (Phase 4 work that
+1. **Locked-state network seal on the test target** (Phase 4 work that
    needs only a Linux kernel): a default-drop packet policy loaded before
    any interface exists, and capture tests showing no frame leaves while
    sealed.
+2. **Storage key hierarchy ADR** (planned): key classes, evict-on-lock and
+   where the backup authentication key lives while the device is locked.

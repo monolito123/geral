@@ -32,6 +32,23 @@ pub enum Problem {
     },
 }
 
+impl std::fmt::Display for Problem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TooLarge => f.write_str("file is too large"),
+            Self::InvalidCharacter { line } => {
+                write!(f, "line {line}: character outside printable ASCII")
+            }
+            Self::MissingFinalNewline => f.write_str("file does not end with a line feed"),
+            Self::BadHeader => f.write_str("unrecognised first line"),
+            Self::UnsupportedVersion(version) => write!(f, "unsupported format version {version}"),
+            Self::UnexpectedLine { line, expected } => {
+                write!(f, "line {line}: expected `{}`", expected.trim_end())
+            }
+        }
+    }
+}
+
 /// Line cursor that remembers the one-based number of the last line taken.
 pub struct Lines<'a> {
     inner: std::iter::Peekable<std::str::Split<'a, char>>,

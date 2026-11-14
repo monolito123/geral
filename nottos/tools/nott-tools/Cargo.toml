@@ -8,6 +8,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+nott-backup.workspace = true
 nott-crypto.workspace = true
 nott-format.workspace = true
 nott-policy.workspace = true

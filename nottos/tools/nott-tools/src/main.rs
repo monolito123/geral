@@ -6,6 +6,7 @@
 //! CI and a person at a terminal all run exactly the same code.
 
 mod args;
+mod backup_cmd;
 mod kernel_cmd;
 mod manifest_cmd;
 mod repro;
@@ -48,6 +49,10 @@ usage: nott-tools <command>
                 --metadata FILE --signatures FILE --manifest FILE
                 --channel C --target T --now TIME
                 [--last-sequence N] [--time-floor TIME]
+  backup key-create --secret-file FILE [--memory-kib N] [--iterations N]
+                    [--lanes N] --out KEY
+  backup encrypt INPUT --key KEY [--created TIME] --out BACKUP
+  backup decrypt BACKUP --secret-file FILE --out OUTPUT
   manifest create --version V --build-id ID --security-patch YYYY-MM-DD
                   --target T --vb-key FILE --image NAME=FILE... --out FILE
   manifest verify MANIFEST --dir DIR [--vb-key FILE] [--only NAME[,NAME...]]
@@ -101,6 +106,9 @@ fn run(words: &[&str]) -> CommandResult {
         ["update", "root-create", rest @ ..] => update_cmd::root_create(rest),
         ["update", "metadata-create", rest @ ..] => update_cmd::metadata_create(rest),
         ["update", "verify", rest @ ..] => update_cmd::verify(rest),
+        ["backup", "key-create", rest @ ..] => backup_cmd::key_create(rest),
+        ["backup", "encrypt", rest @ ..] => backup_cmd::encrypt(rest),
+        ["backup", "decrypt", rest @ ..] => backup_cmd::decrypt(rest),
         ["manifest", "create", rest @ ..] => manifest_cmd::create(rest),
         ["manifest", "verify", rest @ ..] => manifest_cmd::verify(rest),
         ["repro", "compare", rest @ ..] => repro::compare(rest),

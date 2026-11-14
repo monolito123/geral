@@ -8,6 +8,7 @@
 //! document parses, re-serialising the result yields the same bytes. A
 //! signature over the bytes therefore binds the content and nothing else.
 
+pub mod backup;
 pub mod digest;
 pub mod hex;
 pub mod manifest;

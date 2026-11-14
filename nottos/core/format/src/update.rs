@@ -74,20 +74,7 @@ pub enum UpdateFormatError {
 impl fmt::Display for UpdateFormatError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Envelope(Problem::TooLarge) => f.write_str("file is too large"),
-            Self::Envelope(Problem::InvalidCharacter { line }) => {
-                write!(f, "line {line}: character outside printable ASCII")
-            }
-            Self::Envelope(Problem::MissingFinalNewline) => {
-                f.write_str("file does not end with a line feed")
-            }
-            Self::Envelope(Problem::BadHeader) => f.write_str("unrecognised first line"),
-            Self::Envelope(Problem::UnsupportedVersion(version)) => {
-                write!(f, "unsupported format version {version}")
-            }
-            Self::Envelope(Problem::UnexpectedLine { line, expected }) => {
-                write!(f, "line {line}: expected `{}`", expected.trim_end())
-            }
+            Self::Envelope(problem) => problem.fmt(f),
             Self::BadValue {
                 line: Some(line),
                 field,
