@@ -21,6 +21,8 @@ target or about any phone. See
 | `attest.img` + `attest.verity` | The integrity-folder partition (ADR-0010) | Mounted read-only at `/nott/attest`; holds the signed build manifest, the release keys in NottOS and OpenPGP form, and the README |
 | `data.img` | The user-data partition | dm-crypt over the whole partition (as metadata encryption does), ext4 with one fscrypt-protected directory (as credential-encrypted storage does) |
 | `scratch.img` | A vendor state partition | Plain ext4, mounted `nosuid,nodev,noexec`, on the exception list |
+| `nott-seal` | The kernel side of the network seal (ADR-0014) | tc, iptables and arptables, the facilities the Android generic kernel has |
+| `fscryptctl` | `vold`'s use of the kernel's fscrypt interface | Google's reference tool, built from commit `f1ec9198` (v1.3.0); the distribution does not package it |
 
 The data-partition key is a fixed test key inside the boot image. On a phone
 that key is wrapped by the TEE and bound to the verified-boot state. Here it
@@ -65,6 +67,8 @@ emulates, which takes a few seconds per boot.
 | T8a | Boot sealed and never unseal: bring the interface up with IPv6 on, try DHCP, ARP, ping, DNS, TCP and IPv6 ping, while the host tries to connect to the machine's port 8080 once a second | Every attempt fails; the seal counted drops at the IP layer and at the device layer in both directions; QEMU's capture, which starts before the machine does, holds no frame sent by the machine and at least one sent to it |
 | T8b | Unseal (the stand-in for an authenticated unlock), use the network, seal again, try everything once more; the host starts its connection attempts only once the machine reports that it sealed itself again | While open: a DHCP lease, an ARP reply, and frames of every kind in the capture. After sealing: every attempt fails, and the capture holds no frame sent after the last frame of the open phase |
 | T8c | Boot with one of the packet-filter modules blocked | Stage 1 stops before anything else; no frame is sent |
+| T9a | With `init_on_free=1`: add a storage key, write a file under it, keep a copy of the key in memory as a key manager does; then lock with the file still open, stop the process holding it, and remove the key. The host searches the machine's memory, from outside, at each step | While unlocked, the search finds the key and the content (control). With the file open, removal is incomplete and the content is still in memory. After the holder is stopped: the key is absent, the file unreadable, and neither key nor content is anywhere in memory |
+| T9b | The same with the kernel's default, without `init_on_free=1` | The content survives in freed memory after the key is removed, as the kernel documentation warns, which shows that T9a's result comes from the setting |
 
 Each test that expects absence has a control that shows the check can fail:
 the raw-disk scan must find a plaintext canary on the unencrypted scratch
@@ -76,5 +80,7 @@ machine was sealed throughout.
 
 T1 to T6 are scaled-down analogues of Phase 1 acceptance criteria 1.2 to
 1.6. T8a and T8b are analogues of Phase 4 criteria 4.1 and 4.2 (invariants
-INV-05 and INV-08), on one wired interface and without radios. They do not satisfy those criteria, which are about the Cuttlefish
+INV-05 and INV-08), on one wired interface and without radios. T9a is an
+analogue of Phase 2 criterion 2.6 for one evict-on-lock storage class
+(INV-09), without a TEE and without inline encryption hardware. They do not satisfy those criteria, which are about the Cuttlefish
 target, where the bootloader does the first verification.

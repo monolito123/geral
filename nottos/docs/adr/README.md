@@ -21,6 +21,7 @@ decision, consequences.
 | [0012](0012-hybrid-key-encapsulation.md) | Hybrid key encapsulation | Accepted |
 | [0013](0013-backup-format.md) | Backup encryption format | Accepted |
 | [0014](0014-network-seal.md) | Network seal: layers, loading order, and how it is tested | Accepted |
+| [0015](0015-storage-keys.md) | Storage key hierarchy and eviction at lock | Accepted |
 
 ## Planned ADRs
 
@@ -29,7 +30,6 @@ their absence as a decision. Numbers are assigned when the ADR is written.
 
 | Topic | Phase | Why it needs its own ADR |
 |---|---|---|
-| Storage key hierarchy | 2 | Key classes, evict-on-lock, KDF parameters, inline engine vs. per-file keys |
 | Update installation | 2 | Writing the inactive slot, delta payloads, boot-time rollback, persistent trust state (with AOSP `update_engine`) |
 | Owner-authenticated root mode | 2 | Boot-state change, indicator, effect on attestation, what "write access" means on a verified image |
 | Verify system app | 5 | User interface and the on-device checks of ADR-0010 |

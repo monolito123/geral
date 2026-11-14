@@ -71,7 +71,7 @@ public-key derivation about 35 ms, signing about 0.6 s, verification under
 | 2.3 | No writable-executable memory | Open | Needs AOSP |
 | 2.4 | Kernel hardening checker passes | Open | The profile and checker exist (ADR-0011). There is no Android kernel to pass it; the test target's distribution kernel fails 28 of 84 rules, as expected. |
 | 2.5 | CTS still passes with hardening | Open | Needs AOSP |
-| 2.6 | Keys evicted on lock and reboot | Open | Not started |
+| 2.6 | Keys evicted on lock and reboot | Open | Design in ADR-0015. Analogue on the test target: T9a (key removed at lock, nothing of key or content left in RAM, searched from outside) with its control T9b. Needs AOSP: `vold`, keystore and `seald`. |
 | 2.7 | Duress credential makes data unrecoverable | Open | Not started |
 | 2.8 | Valid update installs; bad classical signature, bad post-quantum signature or lower version refused | Open | The refusals are tested in the verifier (V7, V10). Installation needs `update_engine`. |
 | 2.9 | Failed new slot reverts | Open | Needs AOSP and a bootloader |
@@ -100,6 +100,9 @@ public-key derivation about 35 ms, signing about 0.6 s, verification under
 - The network seal on Android, on radios, and against raw packet sockets
   that bypass the queueing layer (ADR-0014). Only the test target, one
   wired virtual interface, was measured.
+- Eviction with real apps, `vold` and keystore, with hardware-wrapped keys
+  and inline encryption, and the cost of Argon2id at unlock on a phone
+  (ADR-0015).
 
 ## 5. Corrections to earlier work
 
@@ -185,10 +188,29 @@ outreach with a candidate Tier A device.
   sealing. Probes now start only once the machine reports that it is
   sealed. The test target now runs 80 checks.
 
+- **Storage key hierarchy** (ADR-0015): an unlocked-only class beside
+  upstream's two, evicted at every lock; Argon2id ahead of upstream's
+  scrypt; inline or software encryption chosen per device; the backup key
+  in the credential-encrypted class. On the test target, T9a removes a
+  storage key the way the new class will, with Google's `fscryptctl`
+  (built from a pinned commit, since the distribution does not package
+  it), while the host searches the machine's RAM from outside.
+  - While unlocked, the search finds the key and the content.
+  - With a file still open, removal is incomplete and the content stays.
+  - After the holder is stopped and the key removed, neither is anywhere
+    in memory.
+
+  T9b repeats this without `init_on_free=1`. The content survives in
+  freed memory, as the kernel documentation warns. The Android generic
+  kernel does not zero freed memory by default `[V:F-42]`, so NottOS
+  must set it. A first version of the control used a file of two pages
+  and found plaintext in one run but not the next. The file is now 4 MiB,
+  and the result repeats. The test target runs 89 checks.
+
 ## 9. Next steps that need none of those
 
-1. **Storage key hierarchy ADR** (planned): key classes, evict-on-lock, and
-   where the backup authentication key lives while the device is locked.
-2. **Socket destruction on sealing** (criterion 4.9) and **re-sealing new
+1. **Socket destruction on sealing** (criterion 4.9) and **re-sealing new
    interfaces** on the test target: both kernels have the facilities
    (`INET_DIAG_DESTROY`, netlink interface events).
+2. **Command-line rules in the kernel hardening profile**, so that the
+   checker can confirm `init_on_free=1` on GKI kernels (ADR-0015).

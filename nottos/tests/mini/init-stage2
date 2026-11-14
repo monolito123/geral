@@ -40,6 +40,12 @@ CONTENT=$(param content)
 NAME=$(param name)
 DEVICE=$(param device)
 PLAIN=$(param plain)
+# Seeds for the eviction test. The key and the file content are derived
+# from them, so that the host can look for both in this machine's memory
+# while neither appears on the kernel command line.
+KEYSEED=$(param keyseed)
+CANARYSEED=$(param canaryseed)
+FSCRYPTCTL=/sbin/fscryptctl
 # Salt for the passphrase-to-key derivation in e4crypt.
 SALT=0x6e6f74746d696e69
 
@@ -280,6 +286,58 @@ lockcycle)
     net_attempts locked
     sleep 8
     seal_report
+    ;;
+evict)
+    # An evict-on-lock storage class (docs/adr/0015-storage-keys.md): its
+    # key is added at unlock and removed at lock. The key and the content
+    # only ever travel through pipes, never through a variable of this
+    # shell, so that what the host finds in memory is not this script's.
+    # The host searches this machine's memory at each "evict: POINT" line.
+    mkdir /data/ul || halt "FAIL evict: mkdir"
+    printf '%s' "$KEYSEED" | sha512sum | cut -c1-64 | tr -d '\n' |
+        "$FSCRYPTCTL" add_key /data >/tmp/key-id || halt "FAIL evict: add key"
+    id=$(cat /tmp/key-id)
+    "$FSCRYPTCTL" set_policy "$id" /data/ul || halt "FAIL evict: set policy"
+    # About 4 MiB, a thousand pages: enough that, once freed, most of it is
+    # not reused at once, so that what survives in freed memory is visible.
+    printf '%s' "$CANARYSEED" | sha256sum | cut -c1-64 |
+        awk '{ for (i = 0; i < 64000; i++) print }' >/data/ul/canary ||
+        halt "FAIL evict: write"
+    # The copy of the key that the key manager holds while unlocked.
+    printf '%s' "$KEYSEED" | sha512sum | cut -c1-64 >/run/key-holder
+    say "evict: status $("$FSCRYPTCTL" key_status "$id" /data)"
+    say "evict: unlocked"
+    sleep 10
+    # Lock while a process still has the file open (descriptor 3).
+    (
+        exec 3</data/ul/canary
+        exec sleep 600
+    ) &
+    holder=$!
+    rm /run/key-holder
+    "$FSCRYPTCTL" remove_key "$id" /data 2>/dev/null
+    say "evict: status $("$FSCRYPTCTL" key_status "$id" /data)"
+    say "evict: busy"
+    sleep 10
+    # Stop the process, as seald would, and finish the removal.
+    kill "$holder"
+    wait "$holder" 2>/dev/null
+    "$FSCRYPTCTL" remove_key "$id" /data
+    say "evict: status $("$FSCRYPTCTL" key_status "$id" /data)"
+    entries=0
+    readable=0
+    for file in /data/ul/*; do
+        [ -e "$file" ] || continue
+        entries=$((entries + 1))
+        if cat "$file" >/dev/null 2>&1; then readable=1; fi
+    done
+    if [ "$entries" -eq 1 ] && [ "$readable" -eq 0 ]; then
+        say "evict: content inaccessible"
+    else
+        say "evict: FAIL entries=$entries readable=$readable"
+    fi
+    say "evict: locked"
+    sleep 10
     ;;
 *)
     halt "FAIL stage2: unknown test '$TEST'"

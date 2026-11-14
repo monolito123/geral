@@ -26,6 +26,9 @@ GUEST_MAC=52:54:00:12:34:56
 PROBE_PORT=$((20000 + $$ % 20000))
 # Capture file for the next boot; empty for a boot without a network.
 CAPTURE=
+# File that holds the next boot's RAM, readable by the host while the machine
+# runs; empty for ordinary RAM.
+RAMFILE=
 
 # boot LOG SYSTEM_IMAGE METADATA_IMAGE KERNEL_ARGUMENTS [ATTEST_IMAGE]
 # Uses $RUN/data.img and $RUN/scratch.img as the writable disks. With
@@ -44,6 +47,11 @@ boot() {
         -drive "file=$3,if=virtio,format=raw,readonly=on" \
         -drive "file=${5:-$MINI/attest.img},if=virtio,format=raw,readonly=on" \
         -drive "file=$MINI/attest.verity,if=virtio,format=raw,readonly=on"
+    if [ -n "$RAMFILE" ]; then
+        set -- "$@" \
+            -object "memory-backend-file,id=ram0,size=1024M,mem-path=$RAMFILE,share=on" \
+            -machine memory-backend=ram0
+    fi
     if [ -n "$CAPTURE" ]; then
         set -- "$@" \
             -netdev "user,id=net0,restrict=on,hostfwd=tcp:127.0.0.1:$PROBE_PORT-:8080" \
@@ -78,6 +86,26 @@ start_probes() {
 stop_probes() {
     kill "$PROBES" 2>/dev/null || true
     wait "$PROBES" 2>/dev/null || true
+}
+# watch_memory LOG RAM OUT: at each "evict: POINT" line the machine logs,
+# counts the lines of its RAM that contain the key and the content, and
+# appends "POINT key=N content=N" to OUT. Runs until stopped.
+watch_memory() {
+    (
+        for point in unlocked busy locked; do
+            until [ -f "$1" ] && tr -d '\r' <"$1" | grep -q -x "NOTT-MINI: evict: $point"; do
+                sleep 0.2
+            done
+            key=$(LC_ALL=C grep -c -a -F "$EVICT_KEY" "$2" || true)
+            content=$(LC_ALL=C grep -c -a -F "$EVICT_CONTENT" "$2" || true)
+            echo "$point key=$key content=$content" >>"$3"
+        done
+    ) &
+    WATCHER=$!
+}
+# found OUT POINT WHAT: the count recorded for WHAT at POINT.
+found() {
+    sed -n "s/^$2 .*$3=\([0-9]*\).*/\1/p" "$1"
 }
 # capture_check NAME ARGUMENT...: runs the capture checker on $RUN/NAME.pcap.
 capture_check() {
@@ -427,6 +455,68 @@ if capture_check t8c; then
     pass "capture: no frame sent"
 else
     fail "capture: see $RUN/t8c-capture.txt"
+fi
+
+# --- T9: evicting a storage class key at lock (INV-09) ---------------------
+EVICT_SEEDS="nott.keyseed=nott-mini-key-$$ nott.canaryseed=nott-mini-content-$$"
+EVICT_KEY=$(printf '%s' "nott-mini-key-$$" | sha512sum | cut -c1-64)
+EVICT_CONTENT=$(printf '%s' "nott-mini-content-$$" | sha256sum | cut -c1-64)
+# evict_boot NAME KERNEL_ARGUMENTS: one eviction boot, with memory searched
+# from outside at each point.
+evict_boot() {
+    fresh_disks
+    : >"$RUN/$1.scan"
+    watch_memory "$RUN/$1.log" "$RUN/$1.ram" "$RUN/$1.scan"
+    RAMFILE="$RUN/$1.ram"
+    # This boot waits at three points; give it a minute more.
+    saved_timeout=$TIMEOUT
+    TIMEOUT=$((TIMEOUT + 60))
+    boot "$RUN/$1.log" "$MINI/system.img" "$MINI/meta.img" \
+        "nott.test=evict $EVICT_SEEDS $2"
+    TIMEOUT=$saved_timeout
+    RAMFILE=
+    kill "$WATCHER" 2>/dev/null || true
+    wait "$WATCHER" 2>/dev/null || true
+    rm -f "$RUN/$1.ram"
+    sed 's/^/        memory: /' "$RUN/$1.scan"
+}
+
+echo "T9a key removed at lock, memory wiped on free (init_on_free=1)"
+evict_boot t9a init_on_free=1
+logged "$RUN/t9a.log" "evict: status Present"
+expect "$RUN/t9a.log" "evict: status Incompletely removed"
+expect "$RUN/t9a.log" "evict: status Absent"
+expect "$RUN/t9a.log" "evict: content inaccessible"
+# Controls: while unlocked, the search finds the key and the content.
+if [ "$(found "$RUN/t9a.scan" unlocked key)" -gt 0 ] 2>/dev/null &&
+    [ "$(found "$RUN/t9a.scan" unlocked content)" -gt 0 ] 2>/dev/null; then
+    pass "control: while unlocked, memory holds the key and the content"
+else
+    fail "control: the memory search found nothing while unlocked"
+fi
+# A file still open keeps its content in memory: why seald stops holders.
+if [ "$(found "$RUN/t9a.scan" busy content)" -gt 0 ] 2>/dev/null; then
+    pass "a file still open at lock keeps its content in memory"
+else
+    fail "expected the open file's content in memory while removal was incomplete"
+fi
+if [ "$(found "$RUN/t9a.scan" locked key)" = 0 ] &&
+    [ "$(found "$RUN/t9a.scan" locked content)" = 0 ]; then
+    pass "after lock, neither the key nor the content is anywhere in memory"
+else
+    fail "after lock: $(grep '^locked' "$RUN/t9a.scan" || echo 'no search')"
+fi
+
+echo "T9b control: the same, with the kernel's default (no init_on_free)"
+evict_boot t9b ""
+expect "$RUN/t9b.log" "evict: status Absent"
+# The kernel documents that removing a key frees decrypted contents without
+# wiping them. If this boot left nothing either, T9a would not show that
+# init_on_free=1 is what clears memory.
+if [ "$(found "$RUN/t9b.scan" locked content)" -gt 0 ] 2>/dev/null; then
+    pass "control: without init_on_free=1 the content survives in freed memory"
+else
+    fail "control: expected the content in freed memory without init_on_free=1"
 fi
 
 echo

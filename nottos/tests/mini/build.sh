@@ -46,7 +46,7 @@ PATH=$PATH:/usr/sbin:/sbin
 
 for tool in apt-cache apt-get busybox cpio cryptsetup depmod dmsetup dpkg-deb \
     e4crypt gpg gpgconf gzip ldd mke2fs mkfs.erofs openssl veritysetup zstd \
-    tc iptables-legacy-restore arptables-legacy; do
+    tc iptables-legacy-restore arptables-legacy git cc; do
     command -v "$tool" >/dev/null || {
         echo "mini: missing tool: $tool" >&2
         exit 2
@@ -153,13 +153,30 @@ verity_image() {
     }
 }
 
+# --- fscryptctl --------------------------------------------------------------
+# Google's reference tool for the kernel's fscrypt interface, which the
+# distribution does not package. Built from a pinned commit (v1.3.0).
+FSCRYPTCTL_COMMIT=f1ec919877f6b5360c03fdb44b6ed8a47aa459e8
+FSCRYPTCTL_SRC="$OUT/cache/fscryptctl-$FSCRYPTCTL_COMMIT"
+if [ ! -f "$FSCRYPTCTL_SRC/fscryptctl.c" ]; then
+    rm -rf "$FSCRYPTCTL_SRC.tmp"
+    git clone --quiet https://github.com/google/fscryptctl "$FSCRYPTCTL_SRC.tmp"
+    git -C "$FSCRYPTCTL_SRC.tmp" -c advice.detachedHead=false checkout --quiet "$FSCRYPTCTL_COMMIT"
+    mv "$FSCRYPTCTL_SRC.tmp" "$FSCRYPTCTL_SRC"
+fi
+[ "$(git -C "$FSCRYPTCTL_SRC" rev-parse HEAD)" = "$FSCRYPTCTL_COMMIT" ] || {
+    echo "mini: fscryptctl source is not at commit $FSCRYPTCTL_COMMIT" >&2
+    exit 1
+}
+cc -O2 -Wall -o "$WORK/fscryptctl" "$FSCRYPTCTL_SRC/fscryptctl.c"
+
 # --- system image -----------------------------------------------------------
 SYSTEM="$WORK/system"
 mkdir -p "$SYSTEM/etc/nott" "$SYSTEM/dev" "$SYSTEM/proc" "$SYSTEM/sys" \
     "$SYSTEM/run" "$SYSTEM/tmp" "$SYSTEM/data" "$SYSTEM/scratch" \
     "$SYSTEM/nott/attest"
 install_busybox "$SYSTEM"
-install_programs "$SYSTEM" dmsetup e4crypt mke2fs "$TOOLS"
+install_programs "$SYSTEM" dmsetup e4crypt mke2fs "$TOOLS" "$WORK/fscryptctl"
 install_seal "$SYSTEM"
 cp "$HERE/init-stage2" "$SYSTEM/sbin/init"
 chmod 755 "$SYSTEM/sbin/init"

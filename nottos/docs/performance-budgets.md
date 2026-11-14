@@ -135,6 +135,7 @@ These exist because NottOS adds work to the lock and unlock paths.
 |---|---|---|---|
 | Lock event to network sealed (all interfaces dropping) | ≤ 50 ms | ≤ 50 ms | ≤ 50 ms |
 | Lock event to USB data off | ≤ 100 ms | ≤ 100 ms | ≤ 100 ms |
+| Lock event to unlocked-only storage keys absent, opted-in apps stopped first (ADR-0015) | ≤ 500 ms | ≤ 500 ms | ≤ 500 ms |
 | Correct credential to first home frame, AFU | ≤ 1000 ms | ≤ 600 ms | ≤ 400 ms |
 | Correct credential to first home frame, first unlock after boot | ≤ 4.0 s | ≤ 2.5 s | ≤ 1.5 s |
 | Unseal to network usable (excludes re-association with the access point or cell, which the far side dominates) | ≤ 150 ms | ≤ 150 ms | ≤ 150 ms |
