@@ -51,6 +51,9 @@ use std::fmt;
 pub mod context {
     /// A release build manifest (`nott_format::manifest`).
     pub const BUILD_MANIFEST: &str = "build-manifest";
+    /// Boot metadata: the root hashes of the verified partitions, checked
+    /// before any of them is used (what `vbmeta` is on Android).
+    pub const BOOT_METADATA: &str = "boot-metadata";
     /// Root metadata of the update system (`nott_format::update`).
     pub const ROOT_METADATA: &str = "root-metadata";
     /// Update metadata (`nott_format::update`).

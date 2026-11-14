@@ -62,7 +62,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             qemu-system-x86 erofs-utils cryptsetup-bin dmsetup kmod cpio zstd \
-            busybox-static e2fsprogs openssl
+            busybox-static e2fsprogs openssl gnupg
       - name: Boot tests
         run: ./nott mini test
       - name: Serial logs

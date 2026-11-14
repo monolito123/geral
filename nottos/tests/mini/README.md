@@ -16,8 +16,9 @@ target or about any phone. See
 |---|---|---|
 | Distribution kernel, unmodified | The device kernel | Newest `linux-image-*-generic` from apt; version recorded in `kernel-version` |
 | `initramfs.cpio.gz` (stage 1) | The bootloader-verified boot image | Carries the trusted release public key and `nott-tools`. Nothing verifies the initramfs itself: QEMU loads whatever it is given. |
-| `meta.img` | Signed boot metadata (what `vbmeta` is on Android) | Build manifest, its hybrid signature and the dm-verity root hash, in three fixed slots with no filesystem, so nothing is parsed before the signature is checked |
-| `system.img` + `system.verity` | The read-only system partition | EROFS under dm-verity, opened with the root hash the signed manifest vouches for |
+| `meta.img` | Signed boot metadata (what `vbmeta` is on Android) | The root hashes of the system and integrity-folder images, a manifest listing them, and its hybrid signature for the purpose `boot-metadata`, in four fixed slots with no filesystem, so nothing is parsed before the signature is checked |
+| `system.img` + `system.verity` | The read-only system partition | EROFS under dm-verity, opened with the root hash the signed boot metadata vouches for |
+| `attest.img` + `attest.verity` | The integrity-folder partition (ADR-0010) | Mounted read-only at `/nott/attest`; holds the signed build manifest, the release keys in NottOS and OpenPGP form, and the README |
 | `data.img` | The user-data partition | dm-crypt over the whole partition (as metadata encryption does), ext4 with one fscrypt-protected directory (as credential-encrypted storage does) |
 | `scratch.img` | A vendor state partition | Plain ext4, mounted `nosuid,nodev,noexec`, on the exception list |
 
@@ -39,7 +40,7 @@ metadata would boot. Anti-rollback belongs to the update system.
 ```
 
 Needs: `qemu-system-x86`, `erofs-utils`, `cryptsetup-bin`, `dmsetup`,
-`e2fsprogs`, `kmod`, `cpio`, `zstd`, `busybox-static`, `openssl`, and apt
+`e2fsprogs`, `kmod`, `cpio`, `zstd`, `busybox-static`, `openssl`, `gnupg`, and apt
 access to download the kernel packages (about 180 MB, cached under
 `out/mini/cache`). KVM is used when `/dev/kvm` is writable; otherwise QEMU
 emulates, which takes a few seconds per boot.
@@ -53,9 +54,13 @@ emulates, which takes a few seconds per boot.
 | T3 | Flip one bit in a block that boot does not read | Boots; reading the affected file fails with an I/O error; tampered data is never returned |
 | T4a | Boot metadata signed by a key the boot image does not trust | Stage 1 refuses: "signature was made by a different key" |
 | T4b | Manifest changed after it was signed (still well-formed) | Stage 1 refuses: "signature is not valid for this key and message" |
-| T4c | Root hash replaced; manifest and signature untouched | Stage 1 refuses: the root hash does not match the signed manifest |
+| T4c | System root hash replaced; manifest and signature untouched | Stage 1 refuses: the root hash does not match the signed manifest |
+| T4d | Integrity-folder root hash replaced | Stage 1 refuses, as in T4c |
 | T5 | Write secrets, power off, inspect the raw disk; then boot without the passphrase, with a wrong one, with the right one | File content and file name are absent from the raw image; without the right passphrase the name is unreadable and the content inaccessible; with it the content is intact |
 | T6 | Collect the mount table and check it with `nott-tools storage check` | Every mount is verified read-only, volatile, a kernel interface, encrypted, or the listed exception |
+| T7a | Inspect the integrity folder in the running system, as root | Mounted read-only from the verified image; creating, appending, deleting, renaming, making a directory, remounting writable, and writing the verity device or the disk are all refused; the signed manifest matches the system image and its hash tree |
+| T7b | Check the integrity folder from the host, with `nott-tools` and with GnuPG | Every image matches, including the boot image; the OpenPGP signature verifies; an edited copy of the manifest fails both checks |
+| T7c | Flip one bit in the folder's manifest | Reading it fails with an I/O error, the in-system check fails, and the kernel reports dm-verity corruption |
 
 Each test that expects absence has a control that shows the check can fail:
 the raw-disk scan must find a plaintext canary on the unencrypted scratch

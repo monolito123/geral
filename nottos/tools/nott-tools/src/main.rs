@@ -50,7 +50,7 @@ usage: nott-tools <command>
   manifest create --version V --build-id ID --security-patch YYYY-MM-DD
                   --target T --vb-key FILE --image NAME=FILE... --out FILE
   manifest verify MANIFEST --dir DIR [--vb-key FILE] [--only NAME[,NAME...]]
-                  [--public-key FILE --signature FILE]
+                  [--public-key FILE --signature FILE [--context NAME]]
   repro compare DIR_A DIR_B
   size check MANIFEST --budget-bytes N --images NAME[,NAME...]
   sbom --metadata FILE --lock FILE --packages FILE

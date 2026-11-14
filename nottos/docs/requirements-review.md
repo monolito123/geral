@@ -170,6 +170,7 @@ the spike.
 | C-22 | Tests that "prove" the locked-state policy | Wording; hardware arrives late | Assumption |
 | C-23 | eSIM, VoLTE and VoWiFi need closed components | External dependency | Assumption |
 | C-24 | "Small" system apps; offline speech and captions | Limits | Assumption |
+| C-25 | Integrity folder on the system image, listing that image's digest | Impossible as written | Decided (ADR-0010) |
 
 ### C-01 — Device breadth vs. full security guarantees
 
@@ -541,3 +542,19 @@ assumed.
   carries caption tracks. Automatic captioning of arbitrary audio needs an
   on-device speech-recognition model, which is large; it is treated as a new
   feature the owner would have to request.
+
+### C-25 — Integrity folder on the system image, listing that image's digest
+
+**Asked for.** The folder lives on the verified read-only system image and
+holds a manifest with the hashes of every system partition (section 10).
+
+**Problem.** Found while building it. A manifest stored inside an image
+cannot contain that image's own digest, because writing the digest changes
+the image.
+
+**Design** ([ADR-0010](adr/0010-integrity-folder.md)). `/nott/attest` is the
+mount point of a small partition of its own, verified by the boot chain.
+The manifest inside covers every other partition; the folder's partition
+is covered by the signed boot metadata, which the bootloader verifies. The
+path, contents and protections the brief asks for are kept.
+

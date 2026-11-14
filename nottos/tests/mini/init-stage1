@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Stage 1 of the minimal Linux test target. It runs from the initramfs, which
 # stands in for a bootloader-verified boot image: it carries the release
-# public key. It accepts a dm-verity root hash only from a build manifest
-# signed by that key, and refuses to continue otherwise.
+# public key. It accepts dm-verity root hashes only from boot metadata signed
+# by that key, and refuses to continue otherwise.
 #
 # Test scaffolding, not NottOS product code. See README.md.
 
@@ -31,20 +31,21 @@ while read -r module; do
     insmod "/modules/$module" || halt "FAIL stage1: insmod $module"
 done </modules/order
 
-# Boot metadata: three zero-padded 64 KiB slots on an untrusted disk. Nothing
+# Boot metadata: four zero-padded 64 KiB slots on an untrusted disk. Nothing
 # in them is interpreted until the signature has been checked.
 mkdir /run/meta
 slot() {
     dd if=/dev/vde bs=65536 skip="$1" count=1 2>/dev/null |
         tr -d '\000' >"/run/meta/$2"
 }
-slot 0 manifest
-slot 1 manifest.sig
+slot 0 boot-metadata
+slot 1 boot-metadata.sig
 slot 2 system.roothash
-/sbin/nott-tools manifest verify /run/meta/manifest --dir /run/meta \
-    --only system.roothash \
+slot 3 attest.roothash
+/sbin/nott-tools manifest verify /run/meta/boot-metadata --dir /run/meta \
+    --only system.roothash,attest.roothash --context boot-metadata \
     --public-key /etc/nott/release.public \
-    --signature /run/meta/manifest.sig ||
+    --signature /run/meta/boot-metadata.sig ||
     halt "FAIL stage1: boot metadata is not authentic"
 
 # System image: read-only, every block checked against the root hash that
@@ -53,6 +54,12 @@ slot 2 system.roothash
     halt "FAIL stage1: verity open"
 mount -t erofs -o ro /dev/mapper/system /system ||
     halt "FAIL stage1: mount system"
+
+# Integrity folder: its own verified, read-only image.
+/sbin/veritysetup open /dev/vdf attest /dev/vdg "$(cat /run/meta/attest.roothash)" ||
+    halt "FAIL stage1: verity open attest"
+mount -t erofs -o ro,nosuid,nodev,noexec /dev/mapper/attest /system/nott/attest ||
+    halt "FAIL stage1: mount attest"
 
 # Data partition: encrypted as a whole, the way metadata encryption wraps
 # user data on a phone. The key is a test key (see build.sh).

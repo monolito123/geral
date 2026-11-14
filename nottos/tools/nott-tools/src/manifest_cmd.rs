@@ -66,22 +66,28 @@ pub(crate) fn create(raw: &[&str]) -> CommandResult {
 }
 
 pub(crate) fn verify(raw: &[&str]) -> CommandResult {
-    let args = Args::parse(raw, &["dir", "vb-key", "only", "public-key", "signature"])?;
+    let args = Args::parse(
+        raw,
+        &[
+            "dir",
+            "vb-key",
+            "only",
+            "public-key",
+            "signature",
+            "context",
+        ],
+    )?;
     let [manifest_path] = args.positionals()?;
     let text = read_text(Path::new(manifest_path), MAX_MANIFEST_BYTES as u64)?;
     let mut report = String::new();
 
     // Authenticity first: an unauthentic manifest is not interpreted.
+    let purpose = args.optional("context")?.unwrap_or(context::BUILD_MANIFEST);
     match (args.optional("public-key")?, args.optional("signature")?) {
         (Some(key_path), Some(signature_path)) => {
             let public = load_public_key(key_path)?;
             let signature = load_signature(signature_path)?;
-            if let Err(error) = nott_crypto::verify(
-                &public,
-                context::BUILD_MANIFEST,
-                text.as_bytes(),
-                &signature,
-            ) {
+            if let Err(error) = nott_crypto::verify(&public, purpose, text.as_bytes(), &signature) {
                 return Ok(Outcome::Fail(format!(
                     "FAIL signature: {error}\nFAIL: the manifest is not authentic\n"
                 )));

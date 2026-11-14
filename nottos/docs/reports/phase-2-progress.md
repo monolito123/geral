@@ -66,8 +66,8 @@ public-key derivation about 35 ms, signing about 0.6 s, verification under
 | 2.8 | Valid update installs; bad classical signature, bad post-quantum signature or lower version refused | Open | The refusals are tested in the verifier (V7, V10). Installation needs `update_engine`. |
 | 2.9 | Failed new slot reverts | Open | Needs AOSP and a bootloader |
 | 2.10 | Hybrid constructions pass standard vectors and interoperate with a second implementation | **Met for signatures** | V2 to V6. Hybrid key encapsulation (X25519 + ML-KEM-1024) is not built, so the criterion is not met as a whole. |
-| 2.11 | Integrity folder cannot be modified | Open | Not started |
-| 2.12 | Verify system passes on a genuine image and fails on a tampered manifest; an external tool reproduces the hashes | Open | The external half exists: `nott-tools manifest verify` with signature. The on-device app does not. |
+| 2.11 | Integrity folder cannot be modified | Open | Analogue on the test target: T7a (eight write attempts by root refused) and T7c (a changed block cannot be read). The SELinux layer needs AOSP. |
+| 2.12 | Verify system passes on a genuine image and fails on a tampered manifest; an external tool reproduces the hashes | Open | Analogue on the test target: the in-system check passes (T7a) and fails on a damaged manifest (T7c); the external tool and GnuPG verify from the host (T7b). The app does not exist. |
 
 ## 4. What is still UNVERIFIED
 
@@ -111,17 +111,22 @@ Unchanged from the Phase 1 report: an AOSP build host, a dedicated
 organisation for the repositories, three release-key holders, and partner
 outreach with a candidate Tier A device.
 
-## 8. Next steps that need none of those
+## 8. Done since this report was first written
 
-1. **Integrity folder.** Generate `/nott/attest` (release keys, signed
-   manifest, verification README) in the build, place it on the test
-   target's verified system image, and add an in-system check that
-   recomputes the system partition hashes, as an analogue of criterion
-   2.12. ADR: integrity folder.
-2. **Kernel hardening checker.** A tool that reads a kernel configuration
+- **Integrity folder** (ADR-0010). Building it exposed a conflict in the
+  brief (requirements review, C-25): a manifest inside the system image
+  cannot list that image's digest. The folder now has its own verified
+  partition. Tests T4d and T7a to T7c on the test target. During this work
+  one test hung: `rm` on a write-protected file stopped to ask for
+  confirmation on the console. Every write attempt now runs with empty
+  input, and the time limit per boot is down from five minutes to two.
+
+## 9. Next steps that need none of those
+
+1. **Kernel hardening checker.** A tool that reads a kernel configuration
    and reports every option of the hardening profile that is missing.
    Running it on the test target's distribution kernel will show, honestly,
    how far an unmodified kernel is from the profile. ADR: kernel hardening
    profile.
-3. **Hybrid key encapsulation** (X25519 + ML-KEM-1024), with known-answer
+2. **Hybrid key encapsulation** (X25519 + ML-KEM-1024), with known-answer
    tests and a second implementation, as the base for encrypted backups.

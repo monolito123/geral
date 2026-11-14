@@ -16,6 +16,7 @@ decision, consequences.
 | [0007](0007-minimal-linux-test-target.md) | Minimal Linux test target | Accepted |
 | [0008](0008-signature-suite.md) | Hybrid signature suites and formats | Accepted |
 | [0009](0009-update-system.md) | Update metadata and trust roots | Accepted |
+| [0010](0010-integrity-folder.md) | Integrity folder | Accepted |
 
 ## Planned ADRs
 
@@ -29,7 +30,7 @@ their absence as a decision. Numbers are assigned when the ADR is written.
 | Update installation | 2 | Writing the inactive slot, delta payloads, boot-time rollback, persistent trust state (with AOSP `update_engine`) |
 | Kernel hardening profile | 2 | Interface-neutral vs. interface-changing options per tier |
 | Owner-authenticated root mode | 2 | Boot-state change, indicator, effect on attestation, what "write access" means on a verified image |
-| Integrity folder and Verify system | 2 | Final path, manifest format, external verification |
+| Verify system app | 5 | User interface and the on-device checks of ADR-0010 |
 | Process spawning model | 3 | exec-based spawning and the spare-process pool vs. cold-start and RAM budgets |
 | Sandboxed Google Play | 3 | Compatibility layer scope, reuse and maintenance |
 | Locked-state enforcement | 4 | Where Sealed is enforced for network, USB and power, and how unsealing is bound to authentication |

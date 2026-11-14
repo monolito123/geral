@@ -89,6 +89,46 @@ boot)
     fi
     say "shell ready"
     ;;
+attest)
+    # The integrity folder: present, read-only, verified, and it vouches for
+    # the system the device is running.
+    for file in README.txt manifest manifest.sig manifest.asc release.public release.asc; do
+        [ -r "/nott/attest/$file" ] || say "attest: FAIL missing $file"
+    done
+    if grep -q '^/dev/mapper/attest /nott/attest erofs ro,nosuid,nodev,noexec' /proc/mounts; then
+        say "attest: mounted read-only from the verified image"
+    fi
+    # Standard input is empty so that no command can stop to ask a question.
+    refused() {
+        if "$@" </dev/null 2>/dev/null; then
+            say "attest: FAIL allowed: $*"
+        else
+            say "attest: refused: $*"
+        fi
+    }
+    refused touch /nott/attest/new-file
+    refused sh -c 'echo extra >>/nott/attest/manifest'
+    refused rm -f /nott/attest/manifest
+    refused mv -f /nott/attest/manifest /nott/attest/manifest.old
+    refused mkdir /nott/attest/dir
+    refused mount -o remount,rw /nott/attest
+    refused dd if=/dev/zero of=/dev/mapper/attest bs=512 count=1 conv=notrunc
+    refused dd if=/dev/zero of=/dev/vdf bs=512 count=1 conv=notrunc
+    # The checks the Verify system app makes. The boot image is loaded into
+    # memory by the emulator and cannot be read back here, so only the two
+    # images on disk are checked.
+    mkdir -p /run/images
+    ln -s /dev/vda /run/images/system.img
+    ln -s /dev/vdb /run/images/system.verity
+    if /sbin/nott-tools manifest verify /nott/attest/manifest --dir /run/images \
+        --only system.img,system.verity --vb-key /nott/attest/release.public \
+        --public-key /nott/attest/release.public \
+        --signature /nott/attest/manifest.sig; then
+        say "attest: verify PASS"
+    else
+        say "attest: verify FAIL"
+    fi
+    ;;
 provision)
     mkdir /data/secure || halt "FAIL provision: mkdir"
     add_key "$PASS" /data/secure || halt "FAIL provision: set policy"

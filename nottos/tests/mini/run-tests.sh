@@ -14,12 +14,12 @@ HERE=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 MINI=$(CDPATH='' cd -- "$1" && pwd)
 TOOLS=$2
 RUN="$MINI/run"
-TIMEOUT=${NOTT_MINI_TIMEOUT:-300}
+TIMEOUT=${NOTT_MINI_TIMEOUT:-120}
 
 ACCEL=tcg
 if [ -w /dev/kvm ]; then ACCEL=kvm; fi
 
-# boot LOG SYSTEM_IMAGE METADATA_IMAGE KERNEL_ARGUMENTS
+# boot LOG SYSTEM_IMAGE METADATA_IMAGE KERNEL_ARGUMENTS [ATTEST_IMAGE]
 # Uses $RUN/data.img and $RUN/scratch.img as the writable disks.
 boot() {
     timeout "$TIMEOUT" qemu-system-x86_64 \
@@ -31,7 +31,9 @@ boot() {
         -drive "file=$MINI/system.verity,if=virtio,format=raw,readonly=on" \
         -drive "file=$RUN/data.img,if=virtio,format=raw" \
         -drive "file=$RUN/scratch.img,if=virtio,format=raw" \
-        -drive "file=$3,if=virtio,format=raw,readonly=on" || true
+        -drive "file=$3,if=virtio,format=raw,readonly=on" \
+        -drive "file=${5:-$MINI/attest.img},if=virtio,format=raw,readonly=on" \
+        -drive "file=$MINI/attest.verity,if=virtio,format=raw,readonly=on" || true
     # Serial output uses CR LF line endings.
     tr -d '\r' <"$1" >"$1.txt"
 }
@@ -49,7 +51,9 @@ if [ "${3:-}" = shell ]; then
         -drive "file=$MINI/system.verity,if=virtio,format=raw,readonly=on" \
         -drive "file=$RUN/data.img,if=virtio,format=raw" \
         -drive "file=$RUN/scratch.img,if=virtio,format=raw" \
-        -drive "file=$MINI/meta.img,if=virtio,format=raw,readonly=on"
+        -drive "file=$MINI/meta.img,if=virtio,format=raw,readonly=on" \
+        -drive "file=$MINI/attest.img,if=virtio,format=raw,readonly=on" \
+        -drive "file=$MINI/attest.verity,if=virtio,format=raw,readonly=on"
 fi
 
 FAILED=0
@@ -180,6 +184,89 @@ boot "$RUN/t4c.log" "$MINI/system.img" "$RUN/meta-roothash.img" "nott.test=boot"
 refuse "$RUN/t4c.log" "shell ready"
 expect "$RUN/t4c.log" "FAIL stage1: boot metadata is not authentic"
 logged "$RUN/t4c.log" "FAIL system.roothash: sha256"
+
+echo "T4d integrity-folder root hash replaced"
+fresh_disks
+cp "$MINI/meta.img" "$RUN/meta-attest.img"
+flip_byte "$RUN/meta-attest.img" 196608
+boot "$RUN/t4d.log" "$MINI/system.img" "$RUN/meta-attest.img" "nott.test=boot"
+refuse "$RUN/t4d.log" "shell ready"
+expect "$RUN/t4d.log" "FAIL stage1: boot metadata is not authentic"
+logged "$RUN/t4d.log" "FAIL attest.roothash: sha256"
+
+# --- T7: the integrity folder ----------------------------------------------
+echo "T7a integrity folder in the running system"
+fresh_disks
+boot "$RUN/t7a.log" "$MINI/system.img" "$MINI/meta.img" "nott.test=attest"
+expect "$RUN/t7a.log" "attest: mounted read-only from the verified image"
+for operation in "touch /nott/attest/new-file" \
+    "sh -c echo extra >>/nott/attest/manifest" \
+    "rm -f /nott/attest/manifest" \
+    "mv -f /nott/attest/manifest /nott/attest/manifest.old" \
+    "mkdir /nott/attest/dir" \
+    "mount -o remount,rw /nott/attest" \
+    "dd if=/dev/zero of=/dev/mapper/attest bs=512 count=1 conv=notrunc" \
+    "dd if=/dev/zero of=/dev/vdf bs=512 count=1 conv=notrunc"; do
+    expect "$RUN/t7a.log" "attest: refused: $operation"
+done
+if grep -q "attest: FAIL" "$RUN/t7a.log.txt"; then
+    fail "an integrity-folder check failed: $(grep "attest: FAIL" "$RUN/t7a.log.txt" | head -n 1)"
+else
+    pass "no integrity-folder check failed"
+fi
+expect "$RUN/t7a.log" "attest: verify PASS"
+logged "$RUN/t7a.log" "PASS: 2 of 3 listed items checked, all match"
+
+echo "T7b integrity folder checked from outside, with NottOS tools and with OpenPGP"
+external() {
+    "$TOOLS" manifest verify "$1/manifest" --dir "$MINI" \
+        --vb-key "$MINI/attest/release.public" \
+        --public-key "$MINI/attest/release.public" --signature "$1/manifest.sig"
+}
+openpgp() {
+    home=$(mktemp -d)
+    GNUPGHOME="$home" gpg --quiet --batch --import "$MINI/attest/release.asc" 2>/dev/null
+    GNUPGHOME="$home" gpg --batch --verify "$1/manifest.asc" "$1/manifest" 2>/dev/null
+    status=$?
+    GNUPGHOME="$home" gpgconf --kill gpg-agent 2>/dev/null || true
+    rm -rf "$home"
+    return "$status"
+}
+if external "$MINI/attest" >"$RUN/t7b-external.txt"; then
+    pass "every image matches the signed manifest, including the boot image"
+else
+    fail "external verification failed (see $RUN/t7b-external.txt)"
+fi
+if openpgp "$MINI/attest"; then pass "OpenPGP signature verifies"; else fail "OpenPGP signature does not verify"; fi
+# Controls: an edited copy of the folder fails both checks.
+rm -rf "$RUN/attest-edited"
+cp -r "$MINI/attest" "$RUN/attest-edited"
+sed -i 's/^build-id: MINI$/build-id: EVIL/' "$RUN/attest-edited/manifest"
+if external "$RUN/attest-edited" >/dev/null; then
+    fail "control: an edited manifest passed the NottOS check"
+else
+    pass "control: an edited manifest fails the NottOS check"
+fi
+if openpgp "$RUN/attest-edited"; then
+    fail "control: an edited manifest passed the OpenPGP check"
+else
+    pass "control: an edited manifest fails the OpenPGP check"
+fi
+
+echo "T7c one flipped bit in the integrity folder's manifest"
+fresh_disks
+cp "$MINI/attest.img" "$RUN/attest-damaged.img"
+flip_byte "$RUN/attest-damaged.img" \
+    $(($(offset_of "$RUN/attest-damaged.img" "build-id: MINI") + 10))
+boot "$RUN/t7c.log" "$MINI/system.img" "$MINI/meta.img" "nott.test=attest" \
+    "$RUN/attest-damaged.img"
+expect "$RUN/t7c.log" "attest: verify FAIL"
+refuse "$RUN/t7c.log" "attest: verify PASS"
+if grep -q -i 'verity.*corrupt' "$RUN/t7c.log.txt"; then
+    pass "kernel reported dm-verity corruption"
+else
+    fail "no dm-verity corruption report in the kernel log"
+fi
 
 # --- T5: encrypted storage --------------------------------------------------
 echo "T5 encrypted storage"
