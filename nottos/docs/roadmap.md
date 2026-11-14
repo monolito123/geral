@@ -132,6 +132,10 @@ integrity folder, Verify system.
 | 2.11 | Nothing in production can write, rename or delete in the integrity folder (INV-14) | Policy neverallow; run-time attempts from every domain class |
 | 2.12 | Verify system reports pass on a genuine image and fail on a tampered manifest; the external tool reproduces the same hashes | Three test cases |
 
+**Status (2026-11-14).** In progress on the host side: signatures and update
+verification are built (ADR-0008, ADR-0009); criterion 2.10 is met for
+signatures only. See [reports/phase-2-progress.md](reports/phase-2-progress.md).
+
 **Still UNVERIFIED after this phase.** Secure-element throttling (INV-10),
 irreversible key destruction in hardware, kernel hardening on a real vendor
 kernel, MTE.
