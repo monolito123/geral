@@ -691,9 +691,18 @@ dependencies = [
  "nott-crypto",
  "nott-format",
  "nott-policy",
+ "nott-update",
  "serde_json",
  "toml",
  "zeroize",
+]
+
+[[package]]
+name = "nott-update"
+version = "0.1.0"
+dependencies = [
+ "nott-crypto",
+ "nott-format",
 ]
 
 [[package]]

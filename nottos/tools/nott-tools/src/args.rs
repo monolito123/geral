@@ -58,6 +58,11 @@ impl<'a> Args<'a> {
             .ok_or_else(|| format!("missing option --{name}"))
     }
 
+    /// All positional arguments, however many.
+    pub(crate) fn rest(&self) -> &[&'a str] {
+        &self.positionals
+    }
+
     /// Exactly `N` positional arguments.
     pub(crate) fn positionals<const N: usize>(&self) -> Result<[&'a str; N], String> {
         <[&str; N]>::try_from(self.positionals.as_slice()).map_err(|_| {

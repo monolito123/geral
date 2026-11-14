@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["core/crypto", "core/format", "core/policy", "tools/nott-tools"]
+members = ["core/crypto", "core/format", "core/policy", "core/update", "tools/nott-tools"]
 
 [workspace.package]
 version = "0.1.0"
@@ -13,6 +13,7 @@ publish = false
 nott-crypto = { path = "core/crypto" }
 nott-format = { path = "core/format" }
 nott-policy = { path = "core/policy" }
+nott-update = { path = "core/update" }
 getrandom = "0.4.3"
 # Cryptographic implementations are pinned to exact versions
 # (docs/adr/0008-signature-suite.md).

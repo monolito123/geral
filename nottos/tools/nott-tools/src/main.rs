@@ -13,6 +13,7 @@ mod sign_cmd;
 mod size;
 mod storage;
 mod tier_cmd;
+mod update_cmd;
 mod util;
 
 use std::process::ExitCode;
@@ -35,6 +36,17 @@ usage: nott-tools <command>
   key id PUBLIC_KEY
   sign FILE --key SECRET_KEY --context NAME --out SIGNATURE
   verify FILE --public-key FILE --signature FILE --context NAME
+  sigset SIGNATURE... --out FILE
+  update root-create --version N --expires TIME --root-threshold K
+                     --root-key FILE... --release-threshold K
+                     --release-key FILE... --out FILE
+  update metadata-create --channel C --target T --sequence N --issued TIME
+                         --expires TIME --manifest FILE --out FILE
+  update verify --root FILE --root-signatures FILE
+                [--next-root FILE --next-root-signatures FILE]...
+                --metadata FILE --signatures FILE --manifest FILE
+                --channel C --target T --now TIME
+                [--last-sequence N] [--time-floor TIME]
   manifest create --version V --build-id ID --security-patch YYYY-MM-DD
                   --target T --vb-key FILE --image NAME=FILE... --out FILE
   manifest verify MANIFEST --dir DIR [--vb-key FILE] [--only NAME[,NAME...]]
@@ -83,6 +95,10 @@ fn run(words: &[&str]) -> CommandResult {
         ["key", "id", rest @ ..] => sign_cmd::key_id(rest),
         ["sign", rest @ ..] => sign_cmd::sign(rest),
         ["verify", rest @ ..] => sign_cmd::verify(rest),
+        ["sigset", rest @ ..] => update_cmd::sigset(rest),
+        ["update", "root-create", rest @ ..] => update_cmd::root_create(rest),
+        ["update", "metadata-create", rest @ ..] => update_cmd::metadata_create(rest),
+        ["update", "verify", rest @ ..] => update_cmd::verify(rest),
         ["manifest", "create", rest @ ..] => manifest_cmd::create(rest),
         ["manifest", "verify", rest @ ..] => manifest_cmd::verify(rest),
         ["repro", "compare", rest @ ..] => repro::compare(rest),

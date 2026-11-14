@@ -88,6 +88,13 @@ impl<'a> Lines<'a> {
         self.inner.peek().is_some()
     }
 
+    /// Whether the next line starts with `prefix`, without taking it.
+    pub fn peek_starts_with(&mut self, prefix: &str) -> bool {
+        self.inner
+            .peek()
+            .is_some_and(|line| line.starts_with(prefix))
+    }
+
     /// Number of the line most recently taken.
     pub fn number(&self) -> usize {
         self.taken

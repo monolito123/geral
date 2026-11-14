@@ -1,0 +1,15 @@
+[package]
+name = "nott-update"
+description = "NottOS update verification: root rotation, thresholds, freshness and anti-rollback"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+nott-crypto.workspace = true
+nott-format.workspace = true
+
+[lints]
+workspace = true

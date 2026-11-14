@@ -13,6 +13,8 @@ pub mod hex;
 pub mod manifest;
 pub mod signature;
 pub mod text;
+pub mod time;
+pub mod update;
 
 pub use digest::Sha256Digest;
 pub use manifest::{BuildManifest, ImageEntry, ManifestError};

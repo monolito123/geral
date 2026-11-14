@@ -556,3 +556,259 @@ fn root_suite_keys_sign_and_verify() {
         stderr.contains("unknown suite `rsa`; known: ed25519+ml-dsa-87, ed25519+slh-dsa-sha2-256s")
     );
 }
+
+#[test]
+fn update_metadata_end_to_end() {
+    let scratch = Scratch::new("update");
+    let key = |name: &str, suite: &str| {
+        let (secret, public) = (
+            scratch.path(&format!("{name}.secret")),
+            scratch.path(&format!("{name}.public")),
+        );
+        let (code, _, stderr) = run(&[
+            "key",
+            "generate",
+            "--suite",
+            suite,
+            "--out-secret",
+            &secret,
+            "--out-public",
+            &public,
+        ]);
+        assert_eq!(code, 0, "{stderr}");
+        (secret, public)
+    };
+    let roots: Vec<_> = (0..3)
+        .map(|i| key(&format!("root{i}"), "ed25519+slh-dsa-sha2-256s"))
+        .collect();
+    let releases: Vec<_> = (0..2)
+        .map(|i| key(&format!("release{i}"), "ed25519+ml-dsa-87"))
+        .collect();
+    let sign = |file: &str, secret: &str, context: &str, out: &str| {
+        let (code, _, stderr) = run(&[
+            "sign",
+            file,
+            "--key",
+            secret,
+            "--context",
+            context,
+            "--out",
+            out,
+        ]);
+        assert_eq!(code, 0, "{stderr}");
+        out.to_owned()
+    };
+    let combine = |signatures: &[&str], out: &str| {
+        let mut arguments = vec!["sigset"];
+        arguments.extend_from_slice(signatures);
+        arguments.extend_from_slice(&["--out", out]);
+        run(&arguments)
+    };
+
+    // Root version 1: 2 of 3 root keys, 2 of 2 release keys.
+    let root = scratch.path("root.txt");
+    let (code, stdout, stderr) = run(&[
+        "update",
+        "root-create",
+        "--version",
+        "1",
+        "--expires",
+        "2027-11-13T00:00:00Z",
+        "--root-threshold",
+        "2",
+        "--root-key",
+        &roots[0].1,
+        "--root-key",
+        &roots[1].1,
+        "--root-key",
+        &roots[2].1,
+        "--release-threshold",
+        "2",
+        "--release-key",
+        &releases[0].1,
+        "--release-key",
+        &releases[1].1,
+        "--out",
+        &root,
+    ]);
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(
+        stdout,
+        format!("wrote {root}: root version 1, 3 root key(s), 2 release key(s)\n")
+    );
+    let root_sig0 = sign(
+        &root,
+        &roots[0].0,
+        "root-metadata",
+        &scratch.path("root.sig0"),
+    );
+    let root_sig1 = sign(
+        &root,
+        &roots[1].0,
+        "root-metadata",
+        &scratch.path("root.sig1"),
+    );
+    let root_set = scratch.path("root.sigs");
+    assert_eq!(combine(&[&root_sig1, &root_sig0], &root_set).0, 0);
+    let root_one = scratch.path("root.one");
+    assert_eq!(combine(&[&root_sig0], &root_one).0, 0);
+    let (code, _, stderr) = combine(&[&root_sig0, &root_sig0], &scratch.path("dup"));
+    assert_eq!(code, 2);
+    assert!(stderr.contains("strictly ascending"), "{stderr}");
+
+    // Update metadata for release 7, signed by both release keys.
+    let manifest = scratch.file("manifest.txt", b"nottos-build-manifest 1\n(stand-in)\n");
+    let metadata = scratch.path("update.txt");
+    let (code, stdout, stderr) = run(&[
+        "update",
+        "metadata-create",
+        "--channel",
+        "stable",
+        "--target",
+        "mini_x86_64",
+        "--sequence",
+        "7",
+        "--issued",
+        "2026-11-13T00:00:00Z",
+        "--expires",
+        "2026-12-13T00:00:00Z",
+        "--manifest",
+        &manifest,
+        "--out",
+        &metadata,
+    ]);
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(stdout, format!("wrote {metadata}: stable release 7\n"));
+    let update_sig0 = sign(
+        &metadata,
+        &releases[0].0,
+        "update-metadata",
+        &scratch.path("u.sig0"),
+    );
+    let update_sig1 = sign(
+        &metadata,
+        &releases[1].0,
+        "update-metadata",
+        &scratch.path("u.sig1"),
+    );
+    let update_set = scratch.path("update.sigs");
+    assert_eq!(combine(&[&update_sig0, &update_sig1], &update_set).0, 0);
+    let update_one = scratch.path("update.one");
+    assert_eq!(combine(&[&update_sig1], &update_one).0, 0);
+
+    let verify = |root_signatures: &str, signatures: &str, manifest: &str, extra: &[&str]| {
+        let mut arguments = vec![
+            "update",
+            "verify",
+            "--root",
+            &root,
+            "--root-signatures",
+            root_signatures,
+            "--metadata",
+            &metadata,
+            "--signatures",
+            signatures,
+            "--manifest",
+            manifest,
+            "--channel",
+            "stable",
+            "--target",
+            "mini_x86_64",
+        ];
+        arguments.extend_from_slice(extra);
+        run(&arguments)
+    };
+    let now = ["--now", "2026-11-20T00:00:00Z"];
+
+    let (code, stdout, stderr) = verify(&root_set, &update_set, &manifest, &now);
+    assert_eq!(code, 0, "{stdout}{stderr}");
+    assert_eq!(
+        stdout,
+        format!(
+            "ok   root version 1 from {root}\n\
+             ok   update metadata: stable release 7 for mini_x86_64, expires 2026-12-13T00:00:00Z\n\
+             ok   build manifest {manifest}\n\
+             PASS: install release 7; then keep root version 1, last-sequence 7, \
+             time-floor 2026-11-13T00:00:00Z\n"
+        )
+    );
+
+    let failure = |result: (i32, String, String)| {
+        assert_eq!(result.0, 1, "{}{}", result.1, result.2);
+        result.1.lines().last().expect("a verdict").to_owned()
+    };
+    assert_eq!(
+        failure(verify(&root_one, &update_set, &manifest, &now)),
+        "FAIL: 1 valid signature(s) by root keys, 2 required"
+    );
+    assert_eq!(
+        failure(verify(&root_set, &update_one, &manifest, &now)),
+        "FAIL: 1 valid signature(s) by release keys, 2 required"
+    );
+    let mut installed = now.to_vec();
+    installed.extend_from_slice(&["--last-sequence", "7"]);
+    assert_eq!(
+        failure(verify(&root_set, &update_set, &manifest, &installed)),
+        "FAIL: release 7 is not newer than installed release 7"
+    );
+    assert_eq!(
+        failure(verify(
+            &root_set,
+            &update_set,
+            &manifest,
+            &["--now", "2026-12-13T00:00:00Z"]
+        )),
+        "FAIL: the update metadata expired at 2026-12-13T00:00:00Z (now 2026-12-13T00:00:00Z)"
+    );
+    // The clock was set back, but the device remembers a later time.
+    let mut floored = now.to_vec();
+    floored.extend_from_slice(&["--time-floor", "2027-01-01T00:00:00Z"]);
+    assert_eq!(
+        failure(verify(&root_set, &update_set, &manifest, &floored)),
+        "FAIL: the update metadata expired at 2026-12-13T00:00:00Z (now 2027-01-01T00:00:00Z)"
+    );
+    let other_manifest = scratch.file("other.txt", b"nottos-build-manifest 1\n(other)\n");
+    assert_eq!(
+        failure(verify(&root_set, &update_set, &other_manifest, &now)),
+        "FAIL: the build manifest does not match the update metadata"
+    );
+    // Metadata edited after signing.
+    let original = fs::read_to_string(&metadata).expect("metadata readable");
+    fs::write(&metadata, original.replace("sequence: 7", "sequence: 8")).expect("edit");
+    assert_eq!(
+        failure(verify(&root_set, &update_set, &manifest, &now)),
+        "FAIL: 0 valid signature(s) by release keys, 2 required"
+    );
+    fs::write(&metadata, original).expect("restore");
+
+    // Usage errors.
+    let (code, _, stderr) = run(&[
+        "update",
+        "root-create",
+        "--version",
+        "1",
+        "--expires",
+        "2027-11-13T00:00:00Z",
+        "--root-threshold",
+        "4",
+        "--root-key",
+        &roots[0].1,
+        "--release-threshold",
+        "1",
+        "--release-key",
+        &releases[0].1,
+        "--out",
+        &scratch.path("x"),
+    ]);
+    assert_eq!(code, 2);
+    assert!(
+        stderr.contains("--root-key must name 1 to 16 distinct keys"),
+        "{stderr}"
+    );
+    let (code, _, stderr) = verify(&root_set, &update_set, &manifest, &["--now", "yesterday"]);
+    assert_eq!(code, 2);
+    assert!(
+        stderr.contains("--now must look like 2026-11-13T00:00:00Z"),
+        "{stderr}"
+    );
+}
