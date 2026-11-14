@@ -12,22 +12,30 @@ implementations' own test suites.
 | `ml-dsa-87-sigver.txt` | Six verification tests (external interface, pure): two valid, one with a 255-byte context; four invalid (modified message, commitment, hint and response). | NIST ACVP, `ML-DSA-sigVer-FIPS204` |
 | `slh-dsa-sha2-256s-keygen.txt` | All 10 SLH-DSA-SHA2-256s key-generation tests. The private key is stored as its SHA-256 digest. | NIST ACVP, `SLH-DSA-keyGen-FIPS205` |
 | `slh-dsa-sha2-256s-siggen.txt` | Two deterministic signing tests (external interface, pure): a one-byte message with a 254-byte context, and an empty context. The expected signature is stored as its SHA-256 digest. | NIST ACVP, `SLH-DSA-sigGen-FIPS205` |
+| `ml-kem-1024-keygen.txt` | All 25 ML-KEM-1024 key-generation tests; keys stored as SHA-256 digests | NIST ACVP, `ML-KEM-keyGen-FIPS203` |
+| `ml-kem-1024-encap.txt` | Four encapsulation tests; ciphertext stored as its SHA-256 digest | NIST ACVP, `ML-KEM-encapDecap-FIPS203` |
+| `ml-kem-1024-decap.txt` | Four decapsulation tests: two valid, two with a modified ciphertext (implicit rejection) | NIST ACVP, `ML-KEM-encapDecap-FIPS203` |
+| `ml-kem-1024-ek-check.txt` | All 10 encapsulation-key checks | NIST ACVP, `ML-KEM-encapDecap-FIPS203` |
 | `slh-dsa-sha2-256s-sigver.txt` | Eight verification tests (external interface, pure): two valid; four invalid by content (modified message, R, FORS and hypertree parts); two invalid by length (too small, too large), stored as the length only. | NIST ACVP, `SLH-DSA-sigVer-FIPS205` |
 
 The NIST files were read from
 <https://github.com/usnistgov/ACVP-Server> at commit
-`975de31eb83d87039ec88934fdc47d8c312b892d` on 2026-11-13. SHA-256 of the
+`975de31eb83d87039ec88934fdc47d8c312b892d` on 2026-11-13 and 2026-11-14. SHA-256 of the
 `internalProjection.json` files used:
 
 ```text
 e67ee6540d40e11506c3c4e3b1f79fc1cefcd49820db99fc61f87cc8ba463baf  ML-DSA-keyGen-FIPS204
 72dcaf5f69853ca267ccd16af9cb40949786aca0fcfbf05d1ebeba132b93af22  ML-DSA-sigGen-FIPS204
 47cdd6314c7f746d02421ffcba89d4dbc7bb875ac49e07a029fdfc26fba55437  ML-DSA-sigVer-FIPS204
+d7a62a2c3476957f56dd8d24f9004ea6776ccfe995ffe71a65bb9506dc9c7b1b  ML-KEM-keyGen-FIPS203
+a556952ce869bb89c3a3196a701dad89647c193a34c86eafb61a9d710d5b810f  ML-KEM-encapDecap-FIPS203
 d7c53a1b6450087047b57aae83a5a51a0ac89ecdb23ebe071e83fbb69ae9d920  SLH-DSA-keyGen-FIPS205
 62b42e7c27fda5de8a94aba2943ae413b59b6ea08141f3bc035b1eceae235dba  SLH-DSA-sigGen-FIPS205
 a013fc2104f4ed4799d96d51141f65b965969b2cf10646626a021b6d456ce792  SLH-DSA-sigVer-FIPS205
 ```
 
 NIST test vectors are works of the United States government and are in the
-public domain. Ed25519 vectors from RFC 8032, section 7.1, are written out
-in the test source.
+public domain. Ed25519 vectors from RFC 8032, section 7.1, and X25519
+vectors from RFC 7748, sections 5.2 and 6.1, are written out in the test
+source. The RFC 7748 text used has SHA-256
+`279ca0ecc5e92e2962e27b846986aeb74729d9dd34bd4a04a362f80dcb596ad3`.

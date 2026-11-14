@@ -11,10 +11,13 @@ publish.workspace = true
 nott-format.workspace = true
 getrandom.workspace = true
 fips205.workspace = true
+libcrux-curve25519.workspace = true
 libcrux-ed25519.workspace = true
 libcrux-ml-dsa.workspace = true
+libcrux-ml-kem.workspace = true
 rand_core.workspace = true
 sha2.workspace = true
+sha3.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
@@ -22,7 +25,9 @@ zeroize.workspace = true
 # cross-check the first ones in tests. They are never linked into anything
 # that ships.
 ml-dsa.workspace = true
+ml-kem.workspace = true
 slh-dsa.workspace = true
+x25519-dalek.workspace = true
 
 [lints]
 workspace = true

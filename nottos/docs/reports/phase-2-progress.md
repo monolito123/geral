@@ -3,9 +3,9 @@
 - **Date:** 2026-11-14
 - **State:** Phase 1 is still blocked on the AOSP build host. Work moved on
   to the parts of Phase 2 that are product code and can be fully tested on
-  a host: hybrid signatures, signed boot metadata on the test target, and
-  the verification half of the update system. **No Phase 2 acceptance
-  criterion is fully met**; one is met for signatures only (2.10).
+  a host. **One Phase 2 acceptance criterion is met (2.10, hybrid
+  cryptography).** The others need AOSP, a device, or components not yet
+  built.
 
 ## 1. What was built
 
@@ -65,7 +65,7 @@ public-key derivation about 35 ms, signing about 0.6 s, verification under
 | 2.7 | Duress credential makes data unrecoverable | Open | Not started |
 | 2.8 | Valid update installs; bad classical signature, bad post-quantum signature or lower version refused | Open | The refusals are tested in the verifier (V7, V10). Installation needs `update_engine`. |
 | 2.9 | Failed new slot reverts | Open | Needs AOSP and a bootloader |
-| 2.10 | Hybrid constructions pass standard vectors and interoperate with a second implementation | **Met for signatures** | V2 to V6. Hybrid key encapsulation (X25519 + ML-KEM-1024) is not built, so the criterion is not met as a whole. |
+| 2.10 | Hybrid constructions pass standard vectors and interoperate with a second implementation | **Met** | Signatures: V2 to V6. Key encapsulation (X25519 + ML-KEM-1024, ADR-0012): RFC 7748 and NIST ACVP vectors, agreement with RustCrypto `ml-kem` and `x25519-dalek`, combiner recomputed independently. The criterion is about the constructions on a host; their use on a device is covered by other criteria. |
 | 2.11 | Integrity folder cannot be modified | Open | Analogue on the test target: T7a (eight write attempts by root refused) and T7c (a changed block cannot be read). The SELinux layer needs AOSP. |
 | 2.12 | Verify system passes on a genuine image and fails on a tampered manifest; an external tool reproduces the hashes | Open | Analogue on the test target: the in-system check passes (T7a) and fails on a damaged manifest (T7c); the external tool and GnuPG verify from the host (T7b). The app does not exist. |
 
@@ -128,7 +128,17 @@ outreach with a candidate Tier A device.
   configuration exposed a parser bug (option names may contain lower-case
   letters), fixed before the result was recorded.
 
+- **Hybrid key encapsulation** (ADR-0012): X25519 with ML-KEM-1024, the
+  combiner shape of the IETF drafts with a NottOS label; 17 tests; every
+  combiner input and check removed once on purpose, each removal caught.
+  This completes criterion 2.10.
+
 ## 9. Next steps that need none of those
 
-1. **Hybrid key encapsulation** (X25519 + ML-KEM-1024), with known-answer
-   tests and a second implementation, as the base for encrypted backups.
+1. **Backup format**: hybrid wrapping of a random data key, authenticated
+   encryption of the backup, recovery passphrase with a memory-hard KDF.
+   First user of ADR-0012.
+2. **Locked-state network seal on the test target** (Phase 4 work that
+   needs only a Linux kernel): a default-drop packet policy loaded before
+   any interface exists, and capture tests showing no frame leaves while
+   sealed.

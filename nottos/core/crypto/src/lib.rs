@@ -34,6 +34,7 @@
 //! verify for another, and a signature made under one suite does not verify
 //! under another.
 
+pub mod kem;
 mod rng;
 mod secret;
 

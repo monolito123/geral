@@ -18,6 +18,7 @@ decision, consequences.
 | [0009](0009-update-system.md) | Update metadata and trust roots | Accepted |
 | [0010](0010-integrity-folder.md) | Integrity folder | Accepted |
 | [0011](0011-kernel-hardening-profile.md) | Kernel hardening profile | Accepted as a proposal |
+| [0012](0012-hybrid-key-encapsulation.md) | Hybrid key encapsulation | Accepted |
 
 ## Planned ADRs
 
@@ -26,7 +27,6 @@ their absence as a decision. Numbers are assigned when the ADR is written.
 
 | Topic | Phase | Why it needs its own ADR |
 |---|---|---|
-| Hybrid key encapsulation | 5 | X25519 with ML-KEM-1024, decided with the backup and transfer format |
 | Storage key hierarchy | 2 | Key classes, evict-on-lock, KDF parameters, inline engine vs. per-file keys |
 | Update installation | 2 | Writing the inactive slot, delta payloads, boot-time rollback, persistent trust state (with AOSP `update_engine`) |
 | Owner-authenticated root mode | 2 | Boot-state change, indicator, effect on attestation, what "write access" means on a verified image |

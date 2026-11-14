@@ -20,11 +20,16 @@ getrandom = "0.4.3"
 libcrux-ed25519 = { version = "=0.0.10", default-features = false }
 libcrux-ml-dsa = { version = "=0.0.11", default-features = false, features = ["std", "mldsa87"] }
 fips205 = { version = "=0.5.0", default-features = false, features = ["slh-dsa-sha2-256s"] }
+libcrux-curve25519 = "=0.0.9"
+libcrux-ml-kem = { version = "=0.0.11", default-features = false, features = ["std", "mlkem1024"] }
+sha3 = "0.10.8"
 # The random-number interface fips205 expects.
 rand_core = "0.6.4"
 # Second implementations, used only to cross-check the first in tests.
 ml-dsa = "=0.1.2"
+ml-kem = "=0.3.4"
 slh-dsa = "=0.1.0"
+x25519-dalek = { version = "=3.0.0", features = ["static_secrets"] }
 serde = { version = "1.0.200", features = ["derive"] }
 serde_json = "1.0.120"
 sha2 = "0.10.8"
