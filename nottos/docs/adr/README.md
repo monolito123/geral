@@ -17,6 +17,7 @@ decision, consequences.
 | [0008](0008-signature-suite.md) | Hybrid signature suites and formats | Accepted |
 | [0009](0009-update-system.md) | Update metadata and trust roots | Accepted |
 | [0010](0010-integrity-folder.md) | Integrity folder | Accepted |
+| [0011](0011-kernel-hardening-profile.md) | Kernel hardening profile | Accepted as a proposal |
 
 ## Planned ADRs
 
@@ -28,7 +29,6 @@ their absence as a decision. Numbers are assigned when the ADR is written.
 | Hybrid key encapsulation | 5 | X25519 with ML-KEM-1024, decided with the backup and transfer format |
 | Storage key hierarchy | 2 | Key classes, evict-on-lock, KDF parameters, inline engine vs. per-file keys |
 | Update installation | 2 | Writing the inactive slot, delta payloads, boot-time rollback, persistent trust state (with AOSP `update_engine`) |
-| Kernel hardening profile | 2 | Interface-neutral vs. interface-changing options per tier |
 | Owner-authenticated root mode | 2 | Boot-state change, indicator, effect on attestation, what "write access" means on a verified image |
 | Verify system app | 5 | User interface and the on-device checks of ADR-0010 |
 | Process spawning model | 3 | exec-based spawning and the spare-process pool vs. cold-start and RAM budgets |

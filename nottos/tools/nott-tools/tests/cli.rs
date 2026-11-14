@@ -812,3 +812,66 @@ fn update_metadata_end_to_end() {
         "{stderr}"
     );
 }
+
+#[test]
+fn kernel_check_reports_every_rule() {
+    let scratch = Scratch::new("kernel");
+    let profile = scratch.file(
+        "profile.txt",
+        b"[all]\nrequire CONFIG_A=y  needed\nforbid CONFIG_B  dangerous\n[arm64]\nrequire CONFIG_C=y\n",
+    );
+    let good = scratch.file(
+        "good.config",
+        b"CONFIG_A=y\n# CONFIG_B is not set\nCONFIG_C=y\n",
+    );
+    let bad = scratch.file("bad.config", b"CONFIG_A=m\nCONFIG_B=y\n");
+    let check = |config: &str, arch: &str| {
+        run(&[
+            "kernel",
+            "check",
+            config,
+            "--profile",
+            &profile,
+            "--arch",
+            arch,
+        ])
+    };
+
+    let (code, stdout, _) = check(&good, "arm64");
+    assert_eq!(code, 0);
+    assert_eq!(
+        stdout,
+        "ok      CONFIG_A\nok      CONFIG_B\nok      CONFIG_C\nPASS: all 3 rules for arm64 satisfied\n"
+    );
+    let (code, stdout, _) = check(&bad, "arm64");
+    assert_eq!(code, 1);
+    assert_eq!(
+        stdout,
+        "WRONG   CONFIG_A=m  -- needed\n\
+         PRESENT CONFIG_B=y (forbidden)  -- dangerous\n\
+         MISSING CONFIG_C (required)\n\
+         FAIL: 3 of 3 rules for arm64 not satisfied\n"
+    );
+    // The arm64-only rule does not apply to x86_64.
+    let (code, stdout, _) = check(&good, "x86_64");
+    assert_eq!(code, 0);
+    assert!(stdout.ends_with("PASS: all 2 rules for x86_64 satisfied\n"));
+
+    let (code, _, stderr) = check(&good, "riscv64");
+    assert_eq!(code, 2);
+    assert!(stderr.contains("--arch must be arm64 or x86_64"));
+
+    // The shipped profile parses through the command as well.
+    let shipped = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../kernel/hardening-profile.txt");
+    let (code, stdout, stderr) = run(&[
+        "kernel",
+        "check",
+        &good,
+        "--profile",
+        &text(&shipped),
+        "--arch",
+        "arm64",
+    ]);
+    assert_eq!(code, 1, "{stderr}");
+    assert!(stdout.contains("MISSING CONFIG_CFI_CLANG (required)"));
+}

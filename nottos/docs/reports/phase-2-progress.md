@@ -59,7 +59,7 @@ public-key derivation about 35 ms, signing about 0.6 s, verification under
 | 2.1 | No permissive SELinux domain | Open | Needs AOSP |
 | 2.2 | Syscall filter for every process class | Open | Needs AOSP |
 | 2.3 | No writable-executable memory | Open | Needs AOSP |
-| 2.4 | Kernel hardening checker passes | Open | Not started |
+| 2.4 | Kernel hardening checker passes | Open | The profile and checker exist (ADR-0011). There is no Android kernel to pass it; the test target's distribution kernel fails 28 of 84 rules, as expected. |
 | 2.5 | CTS still passes with hardening | Open | Needs AOSP |
 | 2.6 | Keys evicted on lock and reboot | Open | Not started |
 | 2.7 | Duress credential makes data unrecoverable | Open | Not started |
@@ -121,12 +121,14 @@ outreach with a candidate Tier A device.
   confirmation on the console. Every write attempt now runs with empty
   input, and the time limit per boot is down from five minutes to two.
 
+- **Kernel hardening profile and checker** (ADR-0011): 95 rules derived from
+  the Kernel Self Protection Project's list, each deviation justified;
+  `nott-tools kernel check`. Run against the test target's distribution
+  kernel: 28 of 84 x86-64 rules not satisfied. Running it on a real
+  configuration exposed a parser bug (option names may contain lower-case
+  letters), fixed before the result was recorded.
+
 ## 9. Next steps that need none of those
 
-1. **Kernel hardening checker.** A tool that reads a kernel configuration
-   and reports every option of the hardening profile that is missing.
-   Running it on the test target's distribution kernel will show, honestly,
-   how far an unmodified kernel is from the profile. ADR: kernel hardening
-   profile.
-2. **Hybrid key encapsulation** (X25519 + ML-KEM-1024), with known-answer
+1. **Hybrid key encapsulation** (X25519 + ML-KEM-1024), with known-answer
    tests and a second implementation, as the base for encrypted backups.

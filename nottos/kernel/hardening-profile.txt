@@ -1,0 +1,133 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# NottOS kernel hardening profile, version 1 (docs/adr/0011).
+#
+# Based on the Kernel Self Protection Project's recommended settings
+# (https://kspp.github.io/Recommended_Settings, read on 2026-11-14), adapted
+# to the NottOS threat model. Every deviation from that list is recorded in
+# the ADR. This is a proposal: it has not been built into an Android kernel.
+#
+# Syntax, one rule per line:
+#   [all] | [arm64] | [x86_64]     section: which architectures the rules apply to
+#   require CONFIG_NAME=VALUE      the option must have exactly this value
+#   forbid CONFIG_NAME             the option must be unset (absent or "is not set")
+# Text after the rule, separated by whitespace, explains it.
+
+[all]
+# Memory permissions
+require CONFIG_STRICT_KERNEL_RWX=y          kernel code read-only, data non-executable
+require CONFIG_STRICT_MODULE_RWX=y          the same for modules
+require CONFIG_DEBUG_WX=y                   report writable-executable mappings at boot
+require CONFIG_DEFAULT_MMAP_MIN_ADDR=65536  no mappings at the bottom of memory
+require CONFIG_VMAP_STACK=y                 guard pages around kernel stacks
+
+# Memory safety checks
+require CONFIG_STACKPROTECTOR=y
+require CONFIG_STACKPROTECTOR_STRONG=y
+require CONFIG_FORTIFY_SOURCE=y             bounds checks in string and memory functions
+require CONFIG_HARDENED_USERCOPY=y          bounds checks on copies to and from user space
+require CONFIG_HARDENED_USERCOPY_DEFAULT_ON=y
+require CONFIG_LIST_HARDENED=y              cheap list-corruption checks for production
+require CONFIG_BUG_ON_DATA_CORRUPTION=y
+require CONFIG_SCHED_STACK_END_CHECK=y
+require CONFIG_UBSAN=y                      array bounds checks that trap
+require CONFIG_UBSAN_BOUNDS=y
+require CONFIG_UBSAN_TRAP=y
+require CONFIG_KFENCE=y                     sampling detector for heap errors
+require CONFIG_PAGE_TABLE_CHECK=y
+require CONFIG_PAGE_TABLE_CHECK_ENFORCED=y
+
+# Zeroing and randomisation (brief: zero-initialised memory on allocation and free)
+require CONFIG_INIT_ON_ALLOC_DEFAULT_ON=y
+require CONFIG_INIT_ON_FREE_DEFAULT_ON=y
+require CONFIG_INIT_STACK_ALL_ZERO=y
+require CONFIG_ZERO_CALL_USED_REGS=y
+require CONFIG_RANDOMIZE_BASE=y
+require CONFIG_RANDOMIZE_KSTACK_OFFSET_DEFAULT=y
+require CONFIG_SLAB_FREELIST_RANDOM=y
+require CONFIG_SLAB_FREELIST_HARDENED=y
+require CONFIG_SLAB_BUCKETS=y
+require CONFIG_RANDOM_KMALLOC_CACHES=y
+forbid CONFIG_SLAB_MERGE_DEFAULT            keep caches of different types apart
+require CONFIG_SHUFFLE_PAGE_ALLOCATOR=y
+
+# Control-flow integrity (brief: control-flow integrity)
+require CONFIG_CFI_CLANG=y
+forbid CONFIG_CFI_PERMISSIVE                a violation must stop the kernel, not warn
+
+# Access control (brief: SELinux with no permissive domains; kernel lockdown)
+require CONFIG_SECURITY=y
+require CONFIG_SECURITY_SELINUX=y
+forbid CONFIG_SECURITY_SELINUX_DEVELOP      no permissive mode
+forbid CONFIG_SECURITY_SELINUX_BOOTPARAM    SELinux cannot be switched off at boot
+forbid CONFIG_SECURITY_SELINUX_DEBUG
+forbid CONFIG_SECURITY_WRITABLE_HOOKS
+require CONFIG_SECURITY_YAMA=y              ptrace restrictions
+require CONFIG_SECURITY_LOCKDOWN_LSM=y
+require CONFIG_SECURITY_LOCKDOWN_LSM_EARLY=y
+require CONFIG_LOCK_DOWN_KERNEL_FORCE_CONFIDENTIALITY=y
+require CONFIG_SECCOMP=y
+require CONFIG_SECCOMP_FILTER=y
+require CONFIG_SECURITY_DMESG_RESTRICT=y
+require CONFIG_PROC_MEM_NO_FORCE=y
+
+# Modules: vendor drivers need them, so they must be signed (brief: no module
+# loading after boot, enforced at run time with kernel.modules_disabled=1)
+require CONFIG_MODULE_SIG=y
+require CONFIG_MODULE_SIG_FORCE=y
+forbid CONFIG_MODULE_FORCE_LOAD
+
+# Attack surface
+forbid CONFIG_DEVMEM                        no access to physical memory
+forbid CONFIG_DEVKMEM
+forbid CONFIG_PROC_KCORE
+forbid CONFIG_KEXEC                         no replacing the running kernel
+forbid CONFIG_HIBERNATION                   memory never written to storage
+forbid CONFIG_BINFMT_MISC
+forbid CONFIG_LEGACY_PTYS
+forbid CONFIG_LEGACY_TIOCSTI
+forbid CONFIG_LDISC_AUTOLOAD
+forbid CONFIG_ACPI_CUSTOM_METHOD
+forbid CONFIG_COMPAT_BRK
+forbid CONFIG_MAGIC_SYSRQ                   no keyboard backdoor into the kernel
+forbid CONFIG_COMPAT                        64-bit only (docs/adr/0003)
+require CONFIG_SYN_COOKIES=y
+
+# IOMMU (brief: radios isolated with the IOMMU)
+require CONFIG_IOMMU_SUPPORT=y
+require CONFIG_IOMMU_DEFAULT_DMA_STRICT=y
+forbid CONFIG_IOMMU_DEFAULT_PASSTHROUGH
+
+# On a crash, stop (brief: correctness before availability of a damaged kernel)
+require CONFIG_BUG=y
+require CONFIG_PANIC_ON_OOPS=y
+require CONFIG_PANIC_TIMEOUT=-1
+
+[arm64]
+require CONFIG_UNMAP_KERNEL_AT_EL0=y
+require CONFIG_ARM64_SW_TTBR0_PAN=y
+require CONFIG_ARM64_EPAN=y
+require CONFIG_ARM64_E0PD=y
+require CONFIG_SHADOW_CALL_STACK=y           brief: shadow call stack
+require CONFIG_ARM64_PTR_AUTH=y              brief: PAC
+require CONFIG_ARM64_PTR_AUTH_KERNEL=y
+require CONFIG_ARM64_BTI=y                   brief: BTI
+require CONFIG_ARM64_BTI_KERNEL=y
+require CONFIG_ARM64_MTE=y                   brief: MTE on ARMv9 hardware
+require CONFIG_KASAN_HW_TAGS=y               memory tagging inside the kernel
+
+[x86_64]
+require CONFIG_RANDOMIZE_MEMORY=y
+require CONFIG_MITIGATION_PAGE_TABLE_ISOLATION=y
+require CONFIG_MITIGATION_SLS=y
+require CONFIG_X86_KERNEL_IBT=y
+require CONFIG_X86_USER_SHADOW_STACK=y
+require CONFIG_LEGACY_VSYSCALL_NONE=y
+forbid CONFIG_X86_VSYSCALL_EMULATION
+forbid CONFIG_X86_MSR
+forbid CONFIG_IA32_EMULATION
+forbid CONFIG_X86_X32_ABI
+forbid CONFIG_MODIFY_LDT_SYSCALL
+require CONFIG_INTEL_IOMMU=y
+require CONFIG_INTEL_IOMMU_DEFAULT_ON=y
+require CONFIG_AMD_IOMMU=y

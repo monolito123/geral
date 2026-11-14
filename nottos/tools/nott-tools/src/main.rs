@@ -6,6 +6,7 @@
 //! CI and a person at a terminal all run exactly the same code.
 
 mod args;
+mod kernel_cmd;
 mod manifest_cmd;
 mod repro;
 mod sbom;
@@ -55,6 +56,7 @@ usage: nott-tools <command>
   size check MANIFEST --budget-bytes N --images NAME[,NAME...]
   sbom --metadata FILE --lock FILE --packages FILE
        --created YYYY-MM-DDThh:mm:ssZ --name NAME --out FILE
+  kernel check CONFIG --profile FILE --arch arm64|x86_64
   tier check DESCRIPTOR
   storage check REPORT [--exceptions FILE]
 
@@ -105,6 +107,7 @@ fn run(words: &[&str]) -> CommandResult {
         ["size", "check", rest @ ..] => size::check(rest),
         ["sbom", rest @ ..] => sbom::run(rest),
         ["tier", "check", rest @ ..] => tier_cmd::check(rest),
+        ["kernel", "check", rest @ ..] => kernel_cmd::check(rest),
         ["storage", "check", rest @ ..] => storage::check(rest),
         [] | ["help"] | ["--help"] => Ok(Outcome::Pass(USAGE.to_owned())),
         _ => Err(format!("unknown command\n{USAGE}")),
