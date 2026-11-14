@@ -1,0 +1,150 @@
+#!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
+# nott-seal on|off|covered|report: the locked-state network seal of the
+# minimal Linux test target (docs/adr/0014-network-seal.md).
+#
+# It uses only kernel facilities that the Android generic kernel image also
+# has: tc with a match-all drop, iptables and ip6tables, arptables. No
+# nftables, which that kernel lacks.
+#
+#   on       Drops every packet, in both directions, on every interface but
+#            loopback, at three layers, applied in this order so that each
+#            only adds to what is already blocked:
+#              device  on each interface that exists now, a match-all drop
+#                      on ingress and egress, below IP, so that frames
+#                      written to raw packet sockets are dropped too;
+#              ip      IPv4 and IPv6 on every interface, including those
+#                      created later: policy DROP, loopback accepted;
+#              arp     ARP on every interface: policy DROP.
+#            Then checks that all of it is in place, and fails otherwise.
+#            Running it again extends the device layer to new interfaces.
+#   off      Removes the seal: the stand-in for seald after an authenticated
+#            unlock.
+#   covered  Number of interfaces with the device-layer drop both ways.
+#   report   Packets dropped so far, per layer and direction.
+#
+# Test scaffolding, not NottOS product code. See README.md.
+set -eu
+
+TC=/sbin/tc
+IPV4=/sbin/iptables-legacy
+IPV6=/sbin/ip6tables-legacy
+ARP=/sbin/arptables-legacy
+
+# Every interface but loopback.
+devices() {
+    for path in /sys/class/net/*; do
+        device=${path##*/}
+        [ "$device" = lo ] || echo "$device"
+    done
+}
+
+# filter_table POLICY: an iptables-restore input that replaces the whole
+# filter table in one step. With DROP, only loopback is let through.
+filter_table() {
+    echo "*filter"
+    echo ":INPUT $1 [0:0]"
+    echo ":FORWARD $1 [0:0]"
+    echo ":OUTPUT $1 [0:0]"
+    if [ "$1" = DROP ]; then
+        echo "-A INPUT -i lo -j ACCEPT"
+        echo "-A OUTPUT -o lo -j ACCEPT"
+    fi
+    echo "COMMIT"
+}
+
+# dropping DEVICE DIRECTION: whether that direction of DEVICE drops
+# everything.
+dropping() {
+    "$TC" filter show dev "$1" "$2" | grep -q 'gact action drop'
+}
+
+# sealed_device DEVICE: whether both directions of DEVICE drop everything.
+sealed_device() {
+    dropping "$1" ingress && dropping "$1" egress
+}
+
+# dropped CHAIN TOOL...: packets counted by the policy of CHAIN.
+dropped() {
+    chain=$1
+    shift
+    total=0
+    for tool in "$@"; do
+        n=$("$tool" -L "$chain" -v -x -n | sed -n '1s/.*policy [A-Z]* \([0-9]*\) packets.*/\1/p')
+        total=$((total + ${n:-0}))
+    done
+    echo "$total"
+}
+
+# device_dropped DIRECTION: packets dropped by the device layer, all
+# interfaces together.
+device_dropped() {
+    total=0
+    for device in $(devices); do
+        n=$("$TC" -s filter show dev "$device" "$1" |
+            awk '/Sent .* pkt/ { for (i = 1; i < NF; i++) if ($(i + 1) == "pkt") sum += $i }
+                 END { print sum + 0 }')
+        total=$((total + n))
+    done
+    echo "$total"
+}
+
+case "${1:-}" in
+on)
+    for device in $(devices); do
+        "$TC" qdisc replace dev "$device" clsact
+        for direction in ingress egress; do
+            # A drop already in place stays; only a missing one is added.
+            dropping "$device" "$direction" ||
+                "$TC" filter add dev "$device" "$direction" pref 1 matchall action drop
+        done
+    done
+    filter_table DROP | "$IPV4-restore"
+    filter_table DROP | "$IPV6-restore"
+    for chain in INPUT OUTPUT FORWARD; do
+        "$ARP" -P "$chain" DROP
+    done
+    # Fail unless every part is in place.
+    for device in $(devices); do
+        sealed_device "$device"
+    done
+    for tool in "$IPV4" "$IPV6"; do
+        for chain in INPUT FORWARD OUTPUT; do
+            "$tool" -S "$chain" | grep -q -x -e "-P $chain DROP"
+        done
+    done
+    for chain in INPUT OUTPUT FORWARD; do
+        "$ARP" -L "$chain" -n | grep -q "policy DROP"
+    done
+    ;;
+off)
+    for chain in INPUT OUTPUT FORWARD; do
+        "$ARP" -P "$chain" ACCEPT
+    done
+    filter_table ACCEPT | "$IPV4-restore"
+    filter_table ACCEPT | "$IPV6-restore"
+    for device in $(devices); do
+        "$TC" qdisc del dev "$device" clsact 2>/dev/null || true
+    done
+    ;;
+covered)
+    n=0
+    for device in $(devices); do
+        if sealed_device "$device"; then n=$((n + 1)); fi
+    done
+    echo "$n"
+    ;;
+report)
+    echo "device-ingress $(device_dropped ingress)"
+    echo "device-egress $(device_dropped egress)"
+    echo "ip-input $(dropped INPUT "$IPV4" "$IPV6")"
+    echo "ip-output $(dropped OUTPUT "$IPV4" "$IPV6")"
+    echo "ip-forward $(dropped FORWARD "$IPV4" "$IPV6")"
+    echo "arp-input $(dropped INPUT "$ARP")"
+    echo "arp-output $(dropped OUTPUT "$ARP")"
+    ;;
+*)
+    echo "usage: nott-seal on|off|covered|report" >&2
+    exit 2
+    ;;
+esac

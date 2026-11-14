@@ -75,6 +75,63 @@ storage_report() {
     say "END storage-report"
 }
 
+# The guest's address in QEMU's user-mode network; the virtual host is .2 and
+# its DNS server .3.
+GUEST=10.0.2.15
+GATEWAY=10.0.2.2
+RESOLVER=10.0.2.3
+
+# seal_report: what the seal has dropped, one "seal dropped: LAYER N" line
+# per layer.
+seal_report() {
+    /sbin/nott-seal report | while read -r layer packets; do
+        say "seal dropped: $layer $packets"
+        [ "$packets" -gt 0 ] && say "seal counted drops at $layer"
+    done
+}
+
+# net_attempts TAG: tries every kind of traffic once and reports, for each,
+# whether it got through. TAG appears in the DHCP host name and the DNS name,
+# so that a frame that escaped could be traced to its phase.
+net_attempts() {
+    tag=$1
+    # DHCP and ARP probes go out through raw packet sockets, below IP.
+    if timeout 10 udhcpc -i eth0 -n -q -t 2 -T 1 -A 1 -s /bin/true \
+        -x "hostname:$tag-dhcp" >/dev/null 2>&1; then
+        say "$tag: dhcp lease"
+    else
+        say "$tag: dhcp no lease"
+    fi
+    if timeout 5 arping -c 1 -w 2 -I eth0 "$GATEWAY" >/dev/null 2>&1; then
+        say "$tag: arp reply"
+    else
+        say "$tag: arp no reply"
+    fi
+    if timeout 5 ping -c 1 -W 2 "$GATEWAY" >/dev/null 2>&1; then
+        say "$tag: ping reply"
+    else
+        say "$tag: ping no reply"
+    fi
+    if timeout 6 nslookup "$tag-dns.nott.test" "$RESOLVER" >/dev/null 2>&1; then
+        say "$tag: dns answer"
+    else
+        say "$tag: dns no answer"
+    fi
+    if echo probe | timeout 5 nc -w 2 "$GATEWAY" 9 >/dev/null 2>&1; then
+        say "$tag: tcp connected"
+    else
+        say "$tag: tcp failed"
+    fi
+}
+
+# Brings the interface up with a fixed address, as the network stack of a
+# phone would after association.
+net_up() {
+    ip link set eth0 up
+    ip addr add "$GUEST/24" dev eth0
+    ip route add default via "$GATEWAY"
+}
+
 case "$TEST" in
 "")
     say "shell ready"
@@ -181,6 +238,48 @@ wrongpass)
     else
         say "wrongpass: read denied"
     fi
+    ;;
+sealed)
+    # Before first unlock: sealed since stage 1, never unsealed. Every kind
+    # of traffic is attempted, IPv6 included, while the host sends probes
+    # in; the host's capture must show no frame from this machine.
+    net_up
+    sleep 3
+    net_attempts sealed
+    if timeout 5 ping6 -c 1 -W 2 -I eth0 ff02::1 >/dev/null 2>&1; then
+        say "sealed: ping6 reply"
+    else
+        say "sealed: ping6 no reply"
+    fi
+    # A listener the host's probes are aimed at.
+    timeout 8 nc -l -p 8080 >/tmp/inbound 2>/dev/null &
+    sleep 8
+    if [ -s /tmp/inbound ]; then
+        say "sealed: inbound data received"
+    else
+        say "sealed: no inbound data"
+    fi
+    seal_report
+    ;;
+lockcycle)
+    # Unlock (seal off), use the network, lock (seal on), try again. IPv6
+    # is off in this boot so that nothing the kernel sends on its own timers
+    # can blur the moment of locking in the capture.
+    for scope in all default eth0; do
+        sysctl -q -w "net.ipv6.conf.$scope.disable_ipv6=1"
+    done
+    /sbin/nott-seal off || halt "FAIL lockcycle: seal off"
+    say "seal: off"
+    net_up
+    net_attempts open
+    sleep 1
+    # The last frame before locking carries this name.
+    timeout 4 nslookup open-end.nott.test "$RESOLVER" >/dev/null 2>&1
+    /sbin/nott-seal on || halt "FAIL lockcycle: seal on"
+    say "seal: on"
+    net_attempts locked
+    sleep 8
+    seal_report
     ;;
 *)
     halt "FAIL stage2: unknown test '$TEST'"

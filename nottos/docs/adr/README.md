@@ -20,6 +20,7 @@ decision, consequences.
 | [0011](0011-kernel-hardening-profile.md) | Kernel hardening profile | Accepted as a proposal |
 | [0012](0012-hybrid-key-encapsulation.md) | Hybrid key encapsulation | Accepted |
 | [0013](0013-backup-format.md) | Backup encryption format | Accepted |
+| [0014](0014-network-seal.md) | Network seal: layers, loading order, and how it is tested | Accepted |
 
 ## Planned ADRs
 
@@ -34,7 +35,7 @@ their absence as a decision. Numbers are assigned when the ADR is written.
 | Verify system app | 5 | User interface and the on-device checks of ADR-0010 |
 | Process spawning model | 3 | exec-based spawning and the spare-process pool vs. cold-start and RAM budgets |
 | Sandboxed Google Play | 3 | Compatibility layer scope, reuse and maintenance |
-| Locked-state enforcement | 4 | Where Sealed is enforced for network, USB and power, and how unsealing is bound to authentication |
+| Locked-state enforcement | 4 | `seald`, USB and power, how unsealing is bound to authentication, the Allowlist level; the network mechanism is ADR-0014 |
 | Nott Reader libraries | 5 | Parser choices, licences, sandbox profile, office fidelity |
 | Browser and WebView base | 5 | Which hardened Chromium build to track |
 | Keyboard, text-to-speech, eSIM manager | 5 | Component choices and licences |

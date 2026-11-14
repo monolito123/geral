@@ -73,7 +73,7 @@ check_licence_headers() {
         {
             find core tools -name '*.rs'
             echo nott
-            find tests -name '*.sh' -o -name 'init-stage*'
+            find tests -name '*.sh' -o -name 'init-stage*' -o -name 'nott-seal'
         } | while read -r file; do
             head -n 3 "$file" | grep -q 'SPDX-License-Identifier: ' || echo "$file"
         done
@@ -88,7 +88,7 @@ cmd_check() {
     cargo clippy --workspace --all-targets --locked -- -D warnings
     cargo test --workspace --locked
     shellcheck nott tests/mini/*.sh
-    shellcheck --shell=sh tests/mini/init-stage1 tests/mini/init-stage2
+    shellcheck --shell=sh tests/mini/init-stage1 tests/mini/init-stage2 tests/mini/nott-seal
     check_licence_headers
     echo "nott: check passed"
 }

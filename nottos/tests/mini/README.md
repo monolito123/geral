@@ -40,7 +40,8 @@ metadata would boot. Anti-rollback belongs to the update system.
 ```
 
 Needs: `qemu-system-x86`, `erofs-utils`, `cryptsetup-bin`, `dmsetup`,
-`e2fsprogs`, `kmod`, `cpio`, `zstd`, `busybox-static`, `openssl`, `gnupg`, and apt
+`e2fsprogs`, `kmod`, `cpio`, `zstd`, `busybox-static`, `openssl`, `gnupg`,
+`iproute2`, `iptables`, `arptables`, and apt
 access to download the kernel packages (about 180 MB, cached under
 `out/mini/cache`). KVM is used when `/dev/kvm` is writable; otherwise QEMU
 emulates, which takes a few seconds per boot.
@@ -61,14 +62,19 @@ emulates, which takes a few seconds per boot.
 | T7a | Inspect the integrity folder in the running system, as root | Mounted read-only from the verified image; creating, appending, deleting, renaming, making a directory, remounting writable, and writing the verity device or the disk are all refused; the signed manifest matches the system image and its hash tree |
 | T7b | Check the integrity folder from the host, with `nott-tools` and with GnuPG | Every image matches, including the boot image; the OpenPGP signature verifies; an edited copy of the manifest fails both checks |
 | T7c | Flip one bit in the folder's manifest | Reading it fails with an I/O error, the in-system check fails, and the kernel reports dm-verity corruption |
+| T8a | Boot sealed and never unseal: bring the interface up with IPv6 on, try DHCP, ARP, ping, DNS, TCP and IPv6 ping, while the host tries to connect to the machine's port 8080 once a second | Every attempt fails; the seal counted drops at the IP layer and at the device layer in both directions; QEMU's capture, which starts before the machine does, holds no frame sent by the machine and at least one sent to it |
+| T8b | Unseal (the stand-in for an authenticated unlock), use the network, seal again, try everything once more; the host starts its connection attempts only once the machine reports that it sealed itself again | While open: a DHCP lease, an ARP reply, and frames of every kind in the capture. After sealing: every attempt fails, and the capture holds no frame sent after the last frame of the open phase |
+| T8c | Boot with one of the packet-filter modules blocked | Stage 1 stops before anything else; no frame is sent |
 
 Each test that expects absence has a control that shows the check can fail:
 the raw-disk scan must find a plaintext canary on the unencrypted scratch
-disk, and the storage check must flag that disk when the exception list is
-withheld.
+disk, the storage check must flag that disk when the exception list is
+withheld, and the capture checker must flag T8b's capture when told the
+machine was sealed throughout.
 
 ## Relation to the roadmap
 
 T1 to T6 are scaled-down analogues of Phase 1 acceptance criteria 1.2 to
-1.6. They do not satisfy those criteria, which are about the Cuttlefish
+1.6. T8a and T8b are analogues of Phase 4 criteria 4.1 and 4.2 (invariants
+INV-05 and INV-08), on one wired interface and without radios. They do not satisfy those criteria, which are about the Cuttlefish
 target, where the bootloader does the first verification.

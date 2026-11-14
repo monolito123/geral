@@ -7,6 +7,7 @@
 
 mod args;
 mod backup_cmd;
+mod capture;
 mod kernel_cmd;
 mod manifest_cmd;
 mod repro;
@@ -57,6 +58,8 @@ usage: nott-tools <command>
                   --target T --vb-key FILE --image NAME=FILE... --out FILE
   manifest verify MANIFEST --dir DIR [--vb-key FILE] [--only NAME[,NAME...]]
                   [--public-key FILE --signature FILE [--context NAME]]
+  capture check PCAP --device-mac MAC [--seal-marker TEXT]
+                [--expect-sent KIND]... [--min-received N]
   repro compare DIR_A DIR_B
   size check MANIFEST --budget-bytes N --images NAME[,NAME...]
   sbom --metadata FILE --lock FILE --packages FILE
@@ -111,6 +114,7 @@ fn run(words: &[&str]) -> CommandResult {
         ["backup", "decrypt", rest @ ..] => backup_cmd::decrypt(rest),
         ["manifest", "create", rest @ ..] => manifest_cmd::create(rest),
         ["manifest", "verify", rest @ ..] => manifest_cmd::verify(rest),
+        ["capture", "check", rest @ ..] => capture::check(rest),
         ["repro", "compare", rest @ ..] => repro::compare(rest),
         ["size", "check", rest @ ..] => size::check(rest),
         ["sbom", rest @ ..] => sbom::run(rest),

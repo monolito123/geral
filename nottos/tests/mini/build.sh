@@ -45,7 +45,8 @@ WORK="$OUT/work"
 PATH=$PATH:/usr/sbin:/sbin
 
 for tool in apt-cache apt-get busybox cpio cryptsetup depmod dmsetup dpkg-deb \
-    e4crypt gpg gpgconf gzip ldd mke2fs mkfs.erofs openssl veritysetup zstd; do
+    e4crypt gpg gpgconf gzip ldd mke2fs mkfs.erofs openssl veritysetup zstd \
+    tc iptables-legacy-restore arptables-legacy; do
     command -v "$tool" >/dev/null || {
         echo "mini: missing tool: $tool" >&2
         exit 2
@@ -127,6 +128,19 @@ install_programs() {
     done
 }
 
+# install_seal TREE: the network seal script and the programs it uses. The
+# iptables programs find their extensions in a directory fixed at build
+# time; only the standard target is needed.
+install_seal() {
+    install_programs "$1" tc iptables-legacy iptables-legacy-restore \
+        ip6tables-legacy ip6tables-legacy-restore arptables-legacy
+    extensions=$(dirname "$(find /usr/lib /lib -name libxt_standard.so -print -quit)")
+    mkdir -p "$1$extensions"
+    cp "$extensions/libxt_standard.so" "$1$extensions/"
+    cp "$HERE/nott-seal" "$1/sbin/nott-seal"
+    chmod 755 "$1/sbin/nott-seal"
+}
+
 # verity_image NAME: dm-verity hash tree and root hash for $OUT/NAME.img.
 verity_image() {
     veritysetup format \
@@ -146,6 +160,7 @@ mkdir -p "$SYSTEM/etc/nott" "$SYSTEM/dev" "$SYSTEM/proc" "$SYSTEM/sys" \
     "$SYSTEM/nott/attest"
 install_busybox "$SYSTEM"
 install_programs "$SYSTEM" dmsetup e4crypt mke2fs "$TOOLS"
+install_seal "$SYSTEM"
 cp "$HERE/init-stage2" "$SYSTEM/sbin/init"
 chmod 755 "$SYSTEM/sbin/init"
 echo "nott-mini 1" >"$SYSTEM/etc/nott-release"
@@ -189,6 +204,7 @@ mkdir -p "$BOOT/etc/nott" "$BOOT/modules" "$BOOT/dev" "$BOOT/proc" \
     "$BOOT/sys" "$BOOT/run" "$BOOT/system"
 install_busybox "$BOOT"
 install_programs "$BOOT" veritysetup cryptsetup "$TOOLS"
+install_seal "$BOOT"
 # The trust anchor: the only key whose signature on boot metadata counts.
 cp "$OUT/keys/release.public" "$BOOT/etc/nott/release.public"
 cp "$HERE/init-stage1" "$BOOT/init"
@@ -196,26 +212,44 @@ chmod 755 "$BOOT/init"
 
 # Everything stage 1 needs from the kernel. Each item is either built in
 # or a module to load; which one differs between kernel packages.
-wanted=
-for name in virtio_pci virtio_blk dm-mod dm-verity dm-crypt erofs ext4 xts; do
-    module=$(sed -n "s|^\\(.*/$name\\.ko[^:]*\\):.*|\\1|p" "$MODULES/modules.dep")
-    if [ -n "$module" ]; then
-        wanted="$wanted $module"
-    elif ! grep -q "/$name\\.ko\$" "$MODULES/modules.builtin"; then
-        echo "mini: kernel $KERNEL has no $name, built in or as a module" >&2
-        exit 1
-    fi
-done
-# shellcheck disable=SC2086
-module_order "$MODULES/modules.dep" $wanted | awk '!seen[$0]++' |
-    while read -r module; do
+# modules_for NAME...: module paths of those not built in, in load order.
+modules_for() {
+    wanted=
+    for name in "$@"; do
+        module=$(sed -n "s|^\\(.*/$name\\.ko[^:]*\\):.*|\\1|p" "$MODULES/modules.dep")
+        if [ -n "$module" ]; then
+            wanted="$wanted $module"
+        elif ! grep -q "/$name\\.ko\$" "$MODULES/modules.builtin"; then
+            echo "mini: kernel $KERNEL has no $name, built in or as a module" >&2
+            exit 1
+        fi
+    done
+    # shellcheck disable=SC2086
+    [ -z "$wanted" ] || module_order "$MODULES/modules.dep" $wanted
+}
+# install_modules LIST: copies modules read from standard input, skipping
+# those already in an earlier list, and writes their names to LIST.
+install_modules() {
+    awk '!seen[$0]++' | while read -r module; do
         name=$(basename "$module" .zst)
+        grep -q -x -F "$name" "$BOOT/modules/order-seal" 2>/dev/null && continue
         case "$module" in
         *.zst) zstd -q -d -f "$MODULES/$module" -o "$BOOT/modules/$name" ;;
         *) cp "$MODULES/$module" "$BOOT/modules/$name" ;;
         esac
         echo "$name"
-    done >"$BOOT/modules/order"
+    done >"$1.tmp"
+    mv "$1.tmp" "$1"
+}
+# The packet filters are loaded on their own, first, so that the network seal
+# is in place before any other driver (stage 1). Not in a pipeline, so that a
+# missing module stops the build.
+modules_for sch_ingress cls_matchall act_gact iptable_filter ip6table_filter \
+    arptable_filter >"$WORK/modules-seal"
+modules_for virtio_pci virtio_blk dm-mod dm-verity dm-crypt erofs ext4 xts \
+    >"$WORK/modules-rest"
+install_modules "$BOOT/modules/order-seal" <"$WORK/modules-seal"
+install_modules "$BOOT/modules/order" <"$WORK/modules-rest"
 
 # Test key for the data partition. On a phone this key is wrapped by the
 # TEE and bound to the verified-boot state; here it sits in the boot image

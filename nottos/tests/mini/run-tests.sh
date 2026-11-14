@@ -19,11 +19,21 @@ TIMEOUT=${NOTT_MINI_TIMEOUT:-120}
 ACCEL=tcg
 if [ -w /dev/kvm ]; then ACCEL=kvm; fi
 
+# The network tests give the machine one interface on QEMU's user-mode
+# network, isolated from the host's own network, with this address.
+GUEST_MAC=52:54:00:12:34:56
+# Host port forwarded to the machine's port 8080, for probes from outside.
+PROBE_PORT=$((20000 + $$ % 20000))
+# Capture file for the next boot; empty for a boot without a network.
+CAPTURE=
+
 # boot LOG SYSTEM_IMAGE METADATA_IMAGE KERNEL_ARGUMENTS [ATTEST_IMAGE]
-# Uses $RUN/data.img and $RUN/scratch.img as the writable disks.
+# Uses $RUN/data.img and $RUN/scratch.img as the writable disks. With
+# $CAPTURE set, adds the network interface; QEMU records every frame on it,
+# in both directions, from before the machine starts.
 boot() {
-    timeout "$TIMEOUT" qemu-system-x86_64 \
-        -accel "$ACCEL" -cpu max -m 1024 -smp 2 \
+    log=$1
+    set -- -accel "$ACCEL" -cpu max -m 1024 -smp 2 \
         -nodefaults -no-reboot -display none -serial "file:$1" \
         -kernel "$MINI/vmlinuz" -initrd "$MINI/initramfs.cpio.gz" \
         -append "console=ttyS0 loglevel=4 panic=-1 $4" \
@@ -33,9 +43,48 @@ boot() {
         -drive "file=$RUN/scratch.img,if=virtio,format=raw" \
         -drive "file=$3,if=virtio,format=raw,readonly=on" \
         -drive "file=${5:-$MINI/attest.img},if=virtio,format=raw,readonly=on" \
-        -drive "file=$MINI/attest.verity,if=virtio,format=raw,readonly=on" || true
+        -drive "file=$MINI/attest.verity,if=virtio,format=raw,readonly=on"
+    if [ -n "$CAPTURE" ]; then
+        set -- "$@" \
+            -netdev "user,id=net0,restrict=on,hostfwd=tcp:127.0.0.1:$PROBE_PORT-:8080" \
+            -device "virtio-net-pci,netdev=net0,mac=$GUEST_MAC" \
+            -object "filter-dump,id=dump0,netdev=net0,file=$CAPTURE"
+    fi
+    timeout "$TIMEOUT" qemu-system-x86_64 "$@" || true
     # Serial output uses CR LF line endings.
-    tr -d '\r' <"$1" >"$1.txt"
+    tr -d '\r' <"$log" >"$log.txt"
+}
+
+# start_probes [LOG]: connection attempts from the host to the machine, once
+# a second, for as long as they run. With LOG, they start only once the
+# machine reports that it sealed itself again after being unsealed: probes
+# answered while it is open would be indistinguishable in the capture from
+# frames sent just after sealing.
+start_probes() {
+    (
+        if [ -n "${1:-}" ]; then
+            until [ -f "$1" ] && tr -d '\r' <"$1" |
+                sed -n '/^NOTT-MINI: seal: off$/,$p' | grep -q -x 'NOTT-MINI: seal: on'; do
+                sleep 0.2
+            done
+        fi
+        while :; do
+            busybox nc -w 1 127.0.0.1 "$PROBE_PORT" </dev/null >/dev/null 2>&1 || true
+            sleep 1
+        done
+    ) &
+    PROBES=$!
+}
+stop_probes() {
+    kill "$PROBES" 2>/dev/null || true
+    wait "$PROBES" 2>/dev/null || true
+}
+# capture_check NAME ARGUMENT...: runs the capture checker on $RUN/NAME.pcap.
+capture_check() {
+    name=$1
+    shift
+    "$TOOLS" capture check "$RUN/$name.pcap" --device-mac "$GUEST_MAC" "$@" \
+        >"$RUN/$name-capture.txt" 2>&1
 }
 
 if [ "${3:-}" = shell ]; then
@@ -106,6 +155,7 @@ echo "T1 boot from an untampered system image"
 fresh_disks
 boot "$RUN/t1.log" "$MINI/system.img" "$MINI/meta.img" "nott.test=boot"
 expect "$RUN/t1.log" "shell ready"
+expect "$RUN/t1.log" "seal: on"
 logged "$RUN/t1.log" "ok   signature by key $(sha256sum <"$MINI/keys/release.public" | cut -d' ' -f1)"
 expect "$RUN/t1.log" "noncritical: read ok sha256=$(cat "$MINI/noncritical.sha256")"
 
@@ -311,6 +361,73 @@ expect "$RUN/t5-wrongpass.log" "wrongpass: read denied"
 boot "$RUN/t5-unlock.log" "$MINI/system.img" "$MINI/meta.img" \
     "nott.test=unlock nott.pass=correct-horse $CANARIES"
 expect "$RUN/t5-unlock.log" "unlock: content ok"
+
+# --- T8: network seal (INV-05, INV-08) -------------------------------------
+echo "T8a sealed from the first instant of boot; never unsealed"
+fresh_disks
+start_probes
+CAPTURE="$RUN/t8a.pcap"
+boot "$RUN/t8a.log" "$MINI/system.img" "$MINI/meta.img" "nott.test=sealed"
+CAPTURE=
+stop_probes
+expect "$RUN/t8a.log" "seal: on, 1 interface(s) at the device layer"
+for result in "dhcp no lease" "arp no reply" "ping no reply" "dns no answer" \
+    "tcp failed" "ping6 no reply" "no inbound data"; do
+    expect "$RUN/t8a.log" "sealed: $result"
+done
+for layer in ip-output device-egress device-ingress; do
+    expect "$RUN/t8a.log" "seal counted drops at $layer"
+done
+if capture_check t8a --min-received 1; then
+    pass "capture: no frame sent from the first instant on, probes received"
+else
+    fail "capture: see $RUN/t8a-capture.txt"
+fi
+
+echo "T8b unlocked, used, locked again"
+fresh_disks
+start_probes "$RUN/t8b.log"
+CAPTURE="$RUN/t8b.pcap"
+boot "$RUN/t8b.log" "$MINI/system.img" "$MINI/meta.img" "nott.test=lockcycle"
+CAPTURE=
+stop_probes
+expect "$RUN/t8b.log" "seal: off"
+expect "$RUN/t8b.log" "open: dhcp lease"
+expect "$RUN/t8b.log" "open: arp reply"
+expect "$RUN/t8b.log" "seal: on"
+for result in "dhcp no lease" "arp no reply" "ping no reply" "dns no answer" \
+    "tcp failed"; do
+    expect "$RUN/t8b.log" "locked: $result"
+done
+# Every kind the open phase sent must be in the capture: the rig sees them.
+if capture_check t8b --seal-marker open-end --expect-sent arp \
+    --expect-sent dhcp --expect-sent icmp --expect-sent dns --expect-sent tcp \
+    --min-received 1; then
+    pass "capture: frames of every kind while open, none after locking"
+else
+    fail "capture: see $RUN/t8b-capture.txt"
+fi
+# Control: the same capture judged as sealed from the start must fail.
+if "$TOOLS" capture check "$RUN/t8b.pcap" --device-mac "$GUEST_MAC" >/dev/null 2>&1; then
+    fail "control: the checker passed a capture with frames sent"
+else
+    pass "control: the checker flags frames sent while sealed"
+fi
+
+echo "T8c no packet filter, no boot"
+fresh_disks
+CAPTURE="$RUN/t8c.pcap"
+boot "$RUN/t8c.log" "$MINI/system.img" "$MINI/meta.img" \
+    "nott.test=sealed module_blacklist=ip_tables"
+CAPTURE=
+expect "$RUN/t8c.log" "FAIL stage1: insmod ip_tables.ko"
+refuse "$RUN/t8c.log" "seal: on"
+refuse "$RUN/t8c.log" "sealed: dhcp no lease"
+if capture_check t8c; then
+    pass "capture: no frame sent"
+else
+    fail "capture: see $RUN/t8c-capture.txt"
+fi
 
 echo
 if [ "$FAILED" -eq 0 ]; then

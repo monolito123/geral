@@ -97,6 +97,9 @@ public-key derivation about 35 ms, signing about 0.6 s, verification under
 - That a recovery passphrase typed on two devices gives the same bytes:
   Unicode normalisation belongs to the setup and restore screens, which do
   not exist.
+- The network seal on Android, on radios, and against raw packet sockets
+  that bypass the queueing layer (ADR-0014). Only the test target, one
+  wired virtual interface, was measured.
 
 ## 5. Corrections to earlier work
 
@@ -161,11 +164,31 @@ outreach with a candidate Tier A device.
   5.10: restoring on another machine needs only the recovery secret, and a
   damaged wrapper is refused.
 
+- **Network seal on the test target** (ADR-0014; Phase 4 work that needs
+  only a Linux kernel). The first version used nftables and passed the
+  sealed-boot test. Then the Android generic kernel's configuration turned
+  out to have no nftables `[V:F-38]`, so the seal was rebuilt from what
+  that kernel does have: a match-all drop on each interface (tc), the IPv4
+  and IPv6 filter tables, and the ARP filter table, applied in that order.
+  Stage 1 loads the packet-filter modules before any other driver and
+  stops the boot if the seal is incomplete. QEMU records the virtual link
+  from before the machine starts:
+  - T8a, sealed throughout: no frame sent, while DHCP, ARP, ICMP, DNS,
+    TCP and IPv6 were tried and the host probed in.
+  - T8b, open then sealed: every kind seen while open, none after
+    locking.
+  - T8c: with a filter module blocked, the boot stops and nothing is
+    sent.
+
+  A first version of T8b was ambiguous: it let the host probe during the
+  open phase, so a reply could not be placed before or after the moment of
+  sealing. Probes now start only once the machine reports that it is
+  sealed. The test target now runs 80 checks.
+
 ## 9. Next steps that need none of those
 
-1. **Locked-state network seal on the test target** (Phase 4 work that
-   needs only a Linux kernel): a default-drop packet policy loaded before
-   any interface exists, and capture tests showing no frame leaves while
-   sealed.
-2. **Storage key hierarchy ADR** (planned): key classes, evict-on-lock and
+1. **Storage key hierarchy ADR** (planned): key classes, evict-on-lock, and
    where the backup authentication key lives while the device is locked.
+2. **Socket destruction on sealing** (criterion 4.9) and **re-sealing new
+   interfaces** on the test target: both kernels have the facilities
+   (`INET_DIAG_DESTROY`, netlink interface events).

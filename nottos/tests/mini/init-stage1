@@ -27,9 +27,23 @@ halt() {
     poweroff -f
 }
 
-while read -r module; do
-    insmod "/modules/$module" || halt "FAIL stage1: insmod $module"
-done </modules/order
+# load_modules LIST: inserts the modules named in LIST, in order.
+load_modules() {
+    while read -r module; do
+        insmod "/modules/$module" || halt "FAIL stage1: insmod $module"
+    done <"$1"
+}
+
+# The network seal comes first: the packet filters, then rules that drop
+# everything, before any other driver loads and long before anything could
+# bring an interface up (INV-08). Without it the boot goes no further.
+load_modules /modules/order-seal
+/sbin/nott-seal on || halt "FAIL stage1: network seal"
+say "seal: on"
+load_modules /modules/order
+# Drivers loaded since may have created interfaces: extend the seal to them.
+/sbin/nott-seal on || halt "FAIL stage1: network seal"
+say "seal: on, $(/sbin/nott-seal covered) interface(s) at the device layer"
 
 # Boot metadata: four zero-padded 64 KiB slots on an untrusted disk. Nothing
 # in them is interpreted until the signature has been checked.
