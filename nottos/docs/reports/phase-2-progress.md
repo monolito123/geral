@@ -34,7 +34,7 @@ Implementations used, all pinned to exact versions: `libcrux-ed25519`
 ## 2. What was verified, and how
 
 All of the following ran in this development environment; the commits
-also ran on GitHub-hosted runners (CI runs 5 to 9 of the `nottos`
+also ran on GitHub-hosted runners (CI runs 5 to 14 of the `nottos`
 workflow).
 
 | # | Claim | How it was checked | Result |
@@ -51,7 +51,7 @@ workflow).
 | V10 | The update verifier stops the attacks it is for | 14 scenario tests: forged and edited metadata, missing threshold, keys outside the role, wrong purpose, replay, rollback, expiry, clock set back, expired root, wrong channel or target, wrong manifest, rotation with only old or only new keys, version skipping, keys rotated out | Pass |
 | V11 | Those tests can fail | Each check in the verifier was broken once on purpose (11 changes) | 10 caught at once. One missing test was found and added (a root skipping a version). One check was redundant (manifest size, already decided by the digest) and was removed. |
 | V12 | The test target refuses unauthentic boot metadata | Boot tests T4a (untrusted key), T4b (manifest edited after signing), T4c (root hash replaced): stage 1 refuses each, with the reason in the log | Pass, here and in CI |
-| V13 | Builds stay reproducible | `./nott repro`, here and on GitHub runners | Identical across paths and Cargo homes. Identical between this machine and a GitHub runner for commit `7ce3ae9` (before the cryptography crates) and for commit `54832f7` (with them): `10e4864a32c1df9a095435911f9b2ae1c333a24ad7248a9c72165a2840f69369`. |
+| V13 | Builds stay reproducible | `./nott repro`, here and on GitHub runners | Identical across paths and Cargo homes. Identical between this machine and a GitHub runner for commit `7ce3ae9` (before the cryptography crates) and for commit `54832f7` (with them): `10e4864a32c1df9a095435911f9b2ae1c333a24ad7248a9c72165a2840f69369`; and for commit `26f18b8` (with the backup crates): `d08b9f0495edd09b921d033131a81067cd83cef41dcde956cb72f0f4f86e5475`. |
 | V14 | The SBOM is exact | Compared with Cargo's own list of compiled packages; SPDX 2.3 schema | Identical (55 packages when first written, 70 now); valid |
 | V15 | ChaCha20-Poly1305 and Argon2id are called correctly | RFC 8439 (2.8.2, A.5); RFC 9106 (5.3); the eight Argon2id cases of the reference implementation; agreement with RustCrypto `chacha20poly1305` and `rust-argon2` | Pass |
 | V16 | The backup construction is what ADR-0013 says | A backup made by `nott-backup` is opened by a test that rebuilds every step from the ADR with the second implementations only | Pass |
