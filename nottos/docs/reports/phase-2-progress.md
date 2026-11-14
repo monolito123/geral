@@ -45,7 +45,7 @@ workflow).
 | V10 | The update verifier stops the attacks it is for | 14 scenario tests: forged and edited metadata, missing threshold, keys outside the role, wrong purpose, replay, rollback, expiry, clock set back, expired root, wrong channel or target, wrong manifest, rotation with only old or only new keys, version skipping, keys rotated out | Pass |
 | V11 | Those tests can fail | Each check in the verifier was broken once on purpose (11 changes) | 10 caught at once. One missing test was found and added (a root skipping a version). One check was redundant (manifest size, already decided by the digest) and was removed. |
 | V12 | The test target refuses unauthentic boot metadata | Boot tests T4a (untrusted key), T4b (manifest edited after signing), T4c (root hash replaced): stage 1 refuses each, with the reason in the log | Pass, here and in CI |
-| V13 | Builds stay reproducible | `./nott repro` | Identical across paths and Cargo homes. For commit `7ce3ae9` the binary digest was also identical between this machine and a GitHub runner. |
+| V13 | Builds stay reproducible | `./nott repro`, here and on GitHub runners | Identical across paths and Cargo homes. Identical between this machine and a GitHub runner for commit `7ce3ae9` (before the cryptography crates) and for commit `54832f7` (with them): `10e4864a32c1df9a095435911f9b2ae1c333a24ad7248a9c72165a2840f69369`. |
 | V14 | The SBOM is exact | Compared with Cargo's own list of compiled packages; SPDX 2.3 schema | Identical (55 packages); valid |
 
 Measured on this machine (x86-64, no SIMD paths): SLH-DSA-SHA2-256s
